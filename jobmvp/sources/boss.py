@@ -31,6 +31,7 @@ BOSS 列表页含 HR 姓名、活跃状态、头像等。**本适配器根本不
 """
 from __future__ import annotations
 
+import json
 import re
 from urllib.parse import urlencode
 
@@ -68,11 +69,12 @@ class BossAdapter(HttpAdapter):
 
     def __init__(self, client, base_url: str = "https://www.zhipin.com",
                  keyword: str = "Java", city_code: str = "101010100",
-                 mode: str = "http"):
+                 mode: str = "http", cdp_url: str = "http://127.0.0.1:9223"):
         super().__init__(client, base_url)
         self.keyword = keyword
         self.city_code = city_code
         self.mode = mode
+        self.cdp_url = cdp_url
 
     # ------------------------------------------------------------ 发现
     def discover(self, max_pages: int):
@@ -82,6 +84,8 @@ class BossAdapter(HttpAdapter):
 
     # ------------------------------------------------------------ 抓取
     def fetch(self, url: str) -> RawPage:
+        if self.mode == "cdp":
+            return self._fetch_cdp(url)
         if self.mode == "browser":
             return self._fetch_browser(url)
         page = super().fetch(url)          # robots + 验证码特征由基类处理
@@ -117,8 +121,47 @@ class BossAdapter(HttpAdapter):
         """空壳页判定：既没有结果卡片，也没有正常内容。"""
         return ("加载中" in body or "browser-check" in body) and "job-card" not in body
 
+    def _fetch_cdp(self, url: str) -> RawPage:
+        """CDP 被动旁听：连本机已登录 Chrome，捕获页面自身发出的 joblist.json。
+
+        不注入 XHR、不伪造指纹、不接代理池——只让真实浏览器自己发请求，我们旁听
+        Network 响应。拿到接口层明文 salaryDesc（DOM 里是字体加密乱码）。
+        需先手动启动 Chrome 并登录：--remote-debugging-port=9223。
+        """
+        from playwright.sync_api import sync_playwright
+
+        payloads: list[str] = []
+        with sync_playwright() as p:
+            browser = p.chromium.connect_over_cdp(self.cdp_url)
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            reused = bool(ctx.pages)
+            page = ctx.pages[0] if reused else ctx.new_page()
+
+            def on_resp(r):
+                if "joblist.json" in r.url:
+                    try:
+                        payloads.append(r.text())   # 回调内即时取，reload 后 body 会失效
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            page.on("response", on_resp)
+            if "geek/jobs" not in page.url:
+                page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+            for _ in range(4):                 # 真实滚轮触发列表请求（不注入 JS）
+                page.mouse.wheel(0, 2000)
+                page.wait_for_timeout(1500)
+            page.wait_for_timeout(3000)
+            if not reused:
+                page.close()
+
+        if not payloads:
+            raise CaptchaDetected("CDP 未捕获到 joblist（未登录 / 风控 / 改版），已停止")
+        return RawPage(url=url, status=200, body=payloads[-1])
+
     # ------------------------------------------------------------ 解析
     def parse(self, page: RawPage):
+        if page.body.lstrip().startswith("{"):     # CDP 模式返回的是 joblist JSON
+            return self._parse_json(page.body)
         soup = BeautifulSoup(page.body, "lxml")
 
         cards = []
@@ -152,6 +195,33 @@ class BossAdapter(HttpAdapter):
                 "edu": None,
                 "company_name": company,
                 "description": None,        # 列表页无 JD；MVP 不抓详情
+                "posted_at": None,
+            })
+        return out
+
+    @staticmethod
+    def _parse_json(body: str):
+        """解析 joblist.json 明文数据（CDP 模式）。只取岗位侧字段，不碰 HR。"""
+        data = json.loads(body)
+        jobs = (data.get("zpData") or {}).get("jobList") or []
+        out = []
+        for j in jobs:
+            jid = j.get("encryptJobId") or j.get("jobId") or ""
+            if not jid:
+                continue
+            city = j.get("cityName") or ""
+            district = j.get("areaDistrict") or ""
+            loc = f"{city}·{district}" if district else city
+            out.append({
+                "source_job_id": str(jid),
+                "url": f"{_DETAIL_PREFIX}/job_detail/{jid}.html",
+                "title_raw": j.get("jobName") or "",
+                "location_raw": loc,
+                "salary_raw": j.get("salaryDesc") or "",
+                "experience_raw": j.get("jobExperience"),
+                "edu": j.get("jobDegree"),
+                "company_name": j.get("brandName") or j.get("companyName") or "",
+                "description": None,
                 "posted_at": None,
             })
         return out

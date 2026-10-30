@@ -168,6 +168,21 @@ DEFAULT_MOHRSS_KEYWORDS = [
 
 启用前置条件（缺一不可）：法务书面意见 → 写入 `approval_note` → 评估 browser 模式的稳定性与频率。
 
+#### 4.1.1 CDP 旁听模式（`BOSS_MODE=cdp`，实测可用）
+
+适配器连接本机**已登录**的 Chrome（`--remote-debugging-port=9223`），旁听页面自身发出的
+`joblist.json`，拿接口层**明文** `salaryDesc`（DOM 里是字体加密的 `-K` 乱码）。
+不注入 XHR、不伪造指纹、不接代理池，只读旁听。
+
+```bash
+tools\start_boss_chrome.bat          # 1. 启动独立 Chrome 并手动登录 BOSS
+set BOSS_MODE=cdp                    # 2. 切到 cdp 模式
+python -m jobmvp.cli run boss --trigger manual
+```
+
+实测：1 页 15 条，六项字段 100%、薪资可解析 100%、岗类映射 100%。
+前提：Chrome 常驻且登录态有效（过期需重新扫码）。`max_pages=1` 只抓第一页（最新发布）。
+
 ### 4.2 外部数据导入（推荐路径）
 
 BOSS 的 robots 禁止自动化采集，直接抓取不可行。若你已有合法数据（例如在**自己的登录态**下

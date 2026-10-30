@@ -68,5 +68,6 @@ REGISTRY: dict[str, Callable[[], SourceAdapter]] = {
         keyword=os.environ.get("BOSS_KEYWORD", "Java"),
         city_code=os.environ.get("BOSS_CITY", "101010100"),
         mode=os.environ.get("BOSS_MODE", "http"),
+        cdp_url=os.environ.get("BOSS_CDP_URL", "http://127.0.0.1:9223"),
     ),
 }
