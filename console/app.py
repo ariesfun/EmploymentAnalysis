@@ -13,7 +13,7 @@ API_KEY = os.environ.get("JOBMVP_API_KEY", "")
 METRIC_VIEWS = {"new_jobs_daily": "m_new_jobs_daily", "active_jobs": "m_active_jobs", "salary_pctl": "m_salary_pctl",
                 "salary_by_category": "m_salary_pctl_by_category",
                 "job_lifetime": "m_job_lifetime", "skill_weekly": "m_skill_weekly"}   # 白名单，禁止拼接用户输入
-METRIC_VERSION = "v1.2"          # v1.2：业务去重(m_job_dedup) + salary_by_category 最小样本放宽到 10
+METRIC_VERSION = "v1.3"          # v1.3：region_match_pct 改为按 city 判定（兼容无区划码的源，如 BOSS）
 
 app = FastAPI(title="jobmvp console")
 app.include_router(ui_router)                                  # 可视化首页 /ui

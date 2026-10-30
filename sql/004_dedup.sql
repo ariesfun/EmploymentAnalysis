@@ -69,3 +69,14 @@ CREATE OR REPLACE VIEW m_skill_weekly AS
 SELECT date_trunc('week', first_seen)::date AS week, category, s AS skill, count(*) AS cnt
 FROM m_job_dedup, unnest(skills) AS s
 GROUP BY 1,2,3;
+
+-- 数据质量：地区匹配率改为「city 是否解析出」
+-- region_code 是 mohrss 特有的区划码，BOSS 无此字段但有 city，用 region_code 判定会误判为 0%
+CREATE OR REPLACE VIEW m_quality AS
+SELECT source_id,
+       count(*)                                              AS total,
+       round(100.0*avg(salary_ok::int),1)                    AS salary_parse_pct,
+       round(100.0*avg((city IS NOT NULL)::int),1)           AS region_match_pct,
+       round(100.0*avg((category IS NOT NULL)::int),1)       AS category_map_pct,
+       round(100.0*avg((cardinality(skills)>0)::int),1)      AS skill_hit_pct
+FROM job WHERE status='active' GROUP BY 1;
