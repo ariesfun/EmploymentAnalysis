@@ -8,6 +8,42 @@ from jobmvp.registry import REGISTRY                     # 与 CLI 共用同一�
 from jobmvp.runner import SourceDisabled, run_source
 from .ui import router as ui_router
 
+# ---------------------------------------------------------------- 运行日志
+import logging
+import logging.handlers
+from pathlib import Path
+
+LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = LOG_DIR / "app.log"
+
+
+def _setup_logging() -> None:
+    """把 root / uvicorn 日志同时写入 logs/app.log（5MB × 3 滚动）。"""
+    fmt = logging.Formatter("%(asctime)s %(levelname)-5s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S")
+    fh = logging.handlers.RotatingFileHandler(
+        LOG_FILE, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
+    fh.setFormatter(fmt)
+
+    # 只给 root 挂文件 handler：uvicorn.error 的 propagate=True 会自动冒泡到这里，
+    # 再单独给 uvicorn.error 挂一份就会写两遍（实测踩过）。
+    root = logging.getLogger()
+    if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in root.handlers):
+        root.addHandler(fh)
+        root.setLevel(logging.INFO)
+
+    # uvicorn.access 的 propagate=False，不会冒泡，必须单独挂
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in access.handlers):
+        access.addHandler(fh)
+
+    # httpx 每个请求都打 INFO，太吵（状态栏 10s 轮询会刷屏），降到 WARNING
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+_setup_logging()
+logger = logging.getLogger("console")
+
 START_TIME = time.time()          # 进程启动时间，用于计算运行时长
 DSN = os.environ.get("JOBMVP_DSN", "postgresql://mvp:mvp@localhost/jobmvp")
 API_KEY = os.environ.get("JOBMVP_API_KEY", "")
@@ -371,6 +407,20 @@ def scrape_logs(limit: int = 50, only_error: int = 0, _=Depends(auth), conn=Depe
            FROM scrape_step_log WHERE created_at > now() - interval '24 hours'"""
     ).fetchone()
     return {"rows": rows, "summary_24h": summary}
+
+
+@app.get("/api/logs/tail")
+def logs_tail(lines: int = 200, _=Depends(auth)):
+    """读取运行日志文件尾部（实时日志查看用）。"""
+    if not LOG_FILE.exists():
+        return {"lines": [], "file": str(LOG_FILE), "size": 0}
+    n = max(10, min(lines, 2000))
+    with LOG_FILE.open("rb") as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        f.seek(max(0, size - min(size, n * 400)))
+        data = f.read().decode("utf-8", errors="replace")
+    return {"lines": data.splitlines()[-n:], "file": str(LOG_FILE), "size": size}
 
 
 @app.get("/api/analytics/salary_hist")

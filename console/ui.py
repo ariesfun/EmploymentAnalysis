@@ -54,6 +54,9 @@ display:flex;align-items:center;gap:18px;padding:0 16px;font-size:11.5px;color:v
 .statusbar .st-btn{padding:2px 9px;border:1px solid var(--line);background:#fff;border-radius:5px;
 cursor:pointer;font-size:11px;color:var(--muted);font-family:inherit;white-space:nowrap}
 .statusbar .st-btn:hover{background:#f6f7f9;color:var(--ink)}
+.logbox{background:#0f1115;color:#d7dce3;border-radius:8px;padding:12px 14px;
+font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:11.5px;line-height:1.7;
+max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-all}
 .statusbar .dot{width:7px;height:7px;border-radius:50%;background:#9aa1ab;flex-shrink:0}
 .statusbar .dot.ok{background:#22a06b}
 .statusbar .dot.bad{background:#e5484d}
@@ -404,6 +407,20 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
       </div>
       <div id="scrapeLogs"></div>
     </div>
+
+    <div class="card">
+      <h2>运行日志（实时）</h2>
+      <p class="hint">服务端 logs/app.log 尾部，含启动、请求、采集与异常<span class="asof"></span></p>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px;font-size:12.5px">
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="checkbox" id="logAuto" checked onchange="toggleLogAuto()"> 自动刷新（5 秒）
+        </label>
+        <span id="logMeta" class="sub"></span>
+        <button onclick="loadRunLogs()"
+          style="margin-left:auto;padding:4px 12px;border:1px solid #d5d9e0;background:#fff;border-radius:6px;cursor:pointer;font-size:12px">刷新</button>
+      </div>
+      <div class="logbox" id="runLogs">加载中…</div>
+    </div>
   </section>
 
   </main>
@@ -467,6 +484,30 @@ $('statusRefresh')?.addEventListener('click', () => loadStatus(true));
 setInterval(loadStatus, 10000);
 setInterval(tickAgo, 1000);
 document.addEventListener('visibilitychange', () => { if(!document.hidden) loadStatus(); });
+
+// 运行日志（实时）
+let logTimer = null;
+async function loadRunLogs(){
+  try{
+    const d = await api('/api/logs/tail?lines=200');
+    const lines = d.lines || [];
+    const box = $('runLogs');
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    box.textContent = lines.length ? lines.join('\n') : '（暂无日志）';
+    if(atBottom) box.scrollTop = box.scrollHeight;
+    $('logMeta').textContent = `${lines.length} 行 · ${(d.size / 1024).toFixed(1)} KB`;
+  }catch(e){
+    $('runLogs').textContent = '加载失败：' + e.message;
+  }
+}
+function toggleLogAuto(){
+  if($('logAuto').checked){
+    loadRunLogs();
+    logTimer = setInterval(loadRunLogs, 5000);
+  }else if(logTimer){
+    clearInterval(logTimer); logTimer = null;
+  }
+}
 
 // 采集日志
 async function loadScrapeLogs(){
@@ -950,6 +991,8 @@ async function main(){
     loadJobs(0);
     loadPlan();
     loadScrapeLogs();
+    loadRunLogs();
+    if($('logAuto').checked) logTimer = setInterval(loadRunLogs, 5000);
     loadPref();
     loadStatus();
     loadMatch();

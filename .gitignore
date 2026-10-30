@@ -27,3 +27,6 @@ reference/
 
 # WorkBuddy 项目运行时数据（automations / memory 等，不入库）
 .workbuddy-ai/
+
+# 运行日志（滚动文件，不入库）
+logs/

@@ -374,6 +374,30 @@ python tools/boss_api_scrape.py --plan
 | 入库数少于抓取数 | `run_log` 的 `parse_failed` + `parse_error` 表 |
 | 定时任务没跑 | 状态栏「最近采集」多久前 + `run_log` 最近时间 |
 
+### 4.6 运行日志（实时）
+
+**位置**：看板「采集配置」页最下方的「运行日志（实时）」卡片。
+
+**来源**：服务端 `logs/app.log`（`RotatingFileHandler`，5MB × 3 滚动，已加入 `.gitignore`）。
+
+**内容**：
+- uvicorn 启动/关闭、HTTP 访问日志（`GET /api/... 200`）
+- 应用异常
+- 状态探测、采集触发的关键事件
+
+**查看方式**：
+
+| 方式 | 说明 |
+|---|---|
+| 看板卡片 | 默认 5 秒自动刷新，可关；显示行数与文件大小；滚动到底部自动跟随 |
+| 接口 | `GET /api/logs/tail?lines=200` |
+| 本地文件 | `EmploymentAnalysis/logs/app.log` |
+
+**注意**：
+- 只给 root logger 挂文件 handler —— `uvicorn.error` 的 `propagate=True` 会冒泡，再单独挂会写两遍；
+- `uvicorn.access` 的 `propagate=False`，必须单独挂；
+- `httpx` 的 INFO 太吵（状态栏 10 秒轮询会刷屏），已降到 WARNING。
+
 ---
 
 ## 5. 合规约束（不可绕过）
