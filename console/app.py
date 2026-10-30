@@ -123,10 +123,11 @@ def jobs(category: str = "", city: str = "", q: str = "", sort: str = "posted",
         args += [f"%{q}%", f"%{q}%"]
     cond = " AND ".join(where)
     order = {
-        "posted":      "posted_at DESC NULLS LAST, job_pk DESC",
+        # posted_at 为空（如 BOSS 不提供发布时间）时用 first_seen 兜底，保证新采集的靠前
+        "posted":      "COALESCE(posted_at, first_seen) DESC, job_pk DESC",
         "salary_desc": "salary_min DESC NULLS LAST, job_pk DESC",
         "salary_asc":  "salary_min ASC NULLS LAST, job_pk DESC",
-    }.get(sort, "posted_at DESC NULLS LAST, job_pk DESC")
+    }.get(sort, "COALESCE(posted_at, first_seen) DESC, job_pk DESC")
 
     total = conn.execute(f"SELECT count(*) AS n FROM m_job_dedup WHERE {cond}", args).fetchone()["n"]
     rows = conn.execute(
