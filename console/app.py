@@ -217,6 +217,44 @@ def put_scrape_plan(body: dict, _=Depends(auth), conn=Depends(db)):
             "pages_per_combo": pages, "enabled": enabled}
 
 
+@app.get("/api/preference")
+def get_preference(_=Depends(auth), conn=Depends(db)):
+    """读取个人求职意向。"""
+    r = conn.execute("SELECT * FROM job_preference WHERE id=1").fetchone()
+    return r or {}
+
+
+@app.put("/api/preference")
+def put_preference(body: dict, _=Depends(auth), conn=Depends(db)):
+    """保存个人求职意向。"""
+    conn.execute(
+        """UPDATE job_preference SET
+             cities=%s, salary_min=%s, salary_max=%s, skills=%s, categories=%s,
+             exp_min=%s, exp_max=%s, updated_at=now()
+           WHERE id=1""",
+        (body.get("cities") or [], body.get("salary_min"), body.get("salary_max"),
+         body.get("skills") or [], body.get("categories") or [],
+         body.get("exp_min"), body.get("exp_max")),
+    )
+    conn.commit()
+    return {"ok": True}
+
+
+@app.get("/api/match_jobs")
+def match_jobs(limit: int = 20, min_score: int = 0, _=Depends(auth), conn=Depends(db)):
+    """按求职意向匹配的岗位（score 0-100）。"""
+    rows = conn.execute(
+        """SELECT job_pk, source_id, title_raw, company_name, city, district,
+                  salary_raw, salary_min, salary_max, salary_unit, salary_ok,
+                  category, skills, url, posted_at, first_seen, score
+           FROM m_job_match WHERE score >= %s
+           ORDER BY score DESC, salary_max DESC NULLS LAST
+           LIMIT %s""",
+        (min_score, min(limit, 100)),
+    ).fetchall()
+    return {"rows": rows}
+
+
 @app.get("/api/analytics/salary_hist")
 def analytics_salary_hist(step: int = 5, _=Depends(auth), conn=Depends(db)):
     """薪资区间分布直方图（月薪 K，按 step 分桶）。"""

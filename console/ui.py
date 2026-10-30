@@ -136,6 +136,10 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
         <span class="label">岗位明细</span>
       </button>
+      <button class="menu-item" data-mod="pref" title="求职意向">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>
+        <span class="label">求职意向</span>
+      </button>
       <button class="menu-item" data-mod="config" title="采集配置">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         <span class="label">采集配置</span>
@@ -281,6 +285,60 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
     </div>
   </section>
 
+  <section class="mod" data-mod="pref">
+    <div class="card">
+      <h2>个人求职意向</h2>
+      <p class="hint">配置期望城市 / 薪资 / 技能 / 岗类，系统按匹配度给在招岗位打分（0-100）</p>
+
+      <div style="margin-bottom:16px">
+        <label style="font-size:12.5px;color:var(--muted)">期望城市（多选）</label>
+        <div id="prefCities" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:7px"></div>
+      </div>
+
+      <div style="margin-bottom:16px;display:flex;gap:16px;flex-wrap:wrap">
+        <div>
+          <label style="font-size:12.5px;color:var(--muted)">期望月薪（K）</label>
+          <div style="margin-top:5px">
+            <input id="prefSalMin" type="number" placeholder="下限" style="width:90px;padding:6px 9px;border:1px solid #d5d9e0;border-radius:6px;font-size:13px">
+            <span style="color:var(--muted);margin:0 4px">~</span>
+            <input id="prefSalMax" type="number" placeholder="上限" style="width:90px;padding:6px 9px;border:1px solid #d5d9e0;border-radius:6px;font-size:13px">
+          </div>
+        </div>
+        <div>
+          <label style="font-size:12.5px;color:var(--muted)">期望经验（年）</label>
+          <div style="margin-top:5px">
+            <input id="prefExpMin" type="number" placeholder="最低" style="width:80px;padding:6px 9px;border:1px solid #d5d9e0;border-radius:6px;font-size:13px">
+            <span style="color:var(--muted);margin:0 4px">~</span>
+            <input id="prefExpMax" type="number" placeholder="最高" style="width:80px;padding:6px 9px;border:1px solid #d5d9e0;border-radius:6px;font-size:13px">
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px">
+        <label style="font-size:12.5px;color:var(--muted)">期望技能（逗号分隔，如 C++, Linux, MySQL）</label>
+        <input id="prefSkills" placeholder="C++, Linux, MySQL"
+          style="width:100%;margin-top:5px;padding:8px 11px;border:1px solid #d5d9e0;border-radius:8px;font-size:13px;font-family:inherit">
+      </div>
+
+      <div style="margin-bottom:18px">
+        <label style="font-size:12.5px;color:var(--muted)">期望岗类（多选）</label>
+        <div id="prefCats" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:7px"></div>
+      </div>
+
+      <div style="display:flex;gap:12px;align-items:center">
+        <button onclick="savePref()"
+          style="padding:8px 20px;border:none;background:var(--accent);color:#fff;border-radius:8px;cursor:pointer;font-size:13px;font-family:inherit">保存并匹配</button>
+        <span id="prefMsg" class="sub"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>匹配岗位（按匹配度排序）</h2>
+      <p class="hint">城市 25 + 薪资 30 + 技能 35（按交集比例）+ 岗类 10 = 总分 100<span class="asof"></span></p>
+      <div id="matchList"></div>
+    </div>
+  </section>
+
   <section class="mod" data-mod="config">
     <div class="card">
       <h2>采集配置</h2>
@@ -331,6 +389,65 @@ document.getElementById('menu')?.addEventListener('click', e => {
   document.querySelectorAll('.menu-item').forEach(t => t.classList.toggle('active', t === btn));
   document.querySelectorAll('.mod').forEach(m => m.classList.toggle('active', m.dataset.mod === btn.dataset.mod));
 });
+// 求职意向
+const CAT_OPTIONS = ["后端开发","前端开发","测试","算法/AI","数据","运维/SRE","嵌入式/硬件","网络安全","移动开发"];
+async function loadPref(){
+  try{
+    const d = await api('/api/preference');
+    const selC = new Set(d.cities || []);
+    $('prefCities').innerHTML = CITY_OPTIONS.map(c =>
+      `<label style="display:flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;cursor:pointer;font-size:12.5px">
+        <input type="checkbox" value="${c.name}" ${selC.has(c.name)?'checked':''}> ${c.name}
+      </label>`).join('');
+    const selCat = new Set(d.categories || []);
+    $('prefCats').innerHTML = CAT_OPTIONS.map(c =>
+      `<label style="display:flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;cursor:pointer;font-size:12.5px">
+        <input type="checkbox" value="${c}" ${selCat.has(c)?'checked':''}> ${c}
+      </label>`).join('');
+    $('prefSalMin').value = d.salary_min ?? '';
+    $('prefSalMax').value = d.salary_max ?? '';
+    $('prefExpMin').value = d.exp_min ?? '';
+    $('prefExpMax').value = d.exp_max ?? '';
+    $('prefSkills').value = (d.skills || []).join(', ');
+  }catch(e){ console.warn('loadPref', e); }
+}
+async function savePref(){
+  const cities = [...$('prefCities').querySelectorAll('input:checked')].map(el => el.value);
+  const categories = [...$('prefCats').querySelectorAll('input:checked')].map(el => el.value);
+  const skills = $('prefSkills').value.split(/[,，\s]+/).map(x=>x.trim()).filter(Boolean);
+  const num = id => { const v = $(id).value.trim(); return v === '' ? null : Number(v); };
+  const body = {cities, categories, skills,
+    salary_min: num('prefSalMin'), salary_max: num('prefSalMax'),
+    exp_min: num('prefExpMin'), exp_max: num('prefExpMax')};
+  try{
+    const r = await fetch('/api/preference', {method:'PUT',
+      headers:{'X-API-Key':KEY,'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    $('prefMsg').textContent = d.ok ? '已保存，正在匹配…' : '保存失败';
+    await loadMatch();
+    setTimeout(() => { $('prefMsg').textContent = ''; }, 3000);
+  }catch(e){ $('prefMsg').textContent = '保存失败: ' + e.message; }
+}
+async function loadMatch(){
+  try{
+    const d = await api('/api/match_jobs?limit=20');
+    const rows = d.rows || [];
+    if(!rows.length){ $('matchList').innerHTML = '<div class="empty">暂无匹配（先保存求职意向）</div>'; return; }
+    $('matchList').innerHTML = table(
+      [{label:'匹配'},{label:'岗位'},{label:'公司'},{label:'城市'},{label:'月薪'},{label:'来源'},{label:'操作'}],
+      rows.map(r => [
+        `<b style="color:${r.score>=70?'#0b7a43':r.score>=40?'#9a5b00':'#6b7280'}">${r.score}</b>`,
+        esc(r.title_raw),
+        esc(r.company_name || '-'),
+        esc([r.city, r.district].filter(Boolean).join('·') || '-'),
+        fmtSalary(r),
+        esc(SOURCE_NAME[r.source_id] || r.source_id || '-'),
+        r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">查看 ↗</a>` : '-'
+      ]),
+      '暂无匹配');
+  }catch(e){ $('matchList').innerHTML = `<div class="empty">加载失败：${esc(e.message)}</div>`; }
+}
+
 // 采集配置
 const CITY_OPTIONS = [
   {code:"101110100", name:"西安"}, {code:"101270100", name:"成都"},
@@ -724,6 +841,8 @@ async function main(){
         .map(k => `<option>${esc(k)}</option>`).join('');
     loadJobs(0);
     loadPlan();
+    loadPref();
+    loadMatch();
 
     $('audit').innerHTML = table(
       [{label:'时间'},{label:'动作'},{label:'对象'},{label:'操作者'}],
