@@ -378,25 +378,31 @@ python tools/boss_api_scrape.py --plan
 
 **位置**：看板「采集配置」页最下方的「运行日志（实时）」卡片。
 
-**来源**：服务端 `logs/app.log`（`RotatingFileHandler`，5MB × 3 滚动，已加入 `.gitignore`）。
+**来源**：两个日志文件（均已加入 `.gitignore`）
+
+| 文件 | 内容 | 写入方 |
+|---|---|---|
+| `logs/app.log` | 服务启动、HTTP 访问、应用异常、状态探测 | `console/app.py` |
+| `logs/scrape.log` | 采集过程关键信息（计划、每步 code/条数/耗时、入库、完成） | `tools/boss_api_scrape.py` |
 
 **内容**：
-- uvicorn 启动/关闭、HTTP 访问日志（`GET /api/... 200`）
-- 应用异常
-- 状态探测、采集触发的关键事件
+- 服务：uvicorn 启动/关闭、HTTP 访问日志（`GET /api/... 200`）、应用异常
+- 采集：`采集计划：5 词 × 3 城 × 2 页`、`--- 西安 / 开发 第 1 页 ---`、`code=0 岗位数=30 耗时=405ms`、`入库: {new: 1, ...}`、`采集完成，共 30 条`
 
 **查看方式**：
 
 | 方式 | 说明 |
 |---|---|
-| 看板卡片 | 默认 5 秒自动刷新，可关；显示行数与文件大小；滚动到底部自动跟随 |
-| 接口 | `GET /api/logs/tail?lines=200` |
-| 本地文件 | `EmploymentAnalysis/logs/app.log` |
+| 看板卡片 | 默认 5 秒自动刷新；**来源下拉**（全部日志 / 服务日志 / 采集日志）；显示行数与文件大小；滚动到底部自动跟随 |
+| 接口 | `GET /api/logs/tail?lines=200&source=all\|app\|scrape` |
+| 本地文件 | `EmploymentAnalysis/logs/app.log`、`logs/scrape.log` |
 
 **注意**：
 - 只给 root logger 挂文件 handler —— `uvicorn.error` 的 `propagate=True` 会冒泡，再单独挂会写两遍；
 - `uvicorn.access` 的 `propagate=False`，必须单独挂；
-- `httpx` 的 INFO 太吵（状态栏 10 秒轮询会刷屏），已降到 WARNING。
+- `httpx` 的 INFO 太吵（状态栏 10 秒轮询会刷屏），已降到 WARNING；
+- 采集是**独立进程**，用 `FileHandler`（追加）而非 `RotatingFileHandler`，避免多进程抢滚动文件；
+- 合并两个文件时按时间戳字符串排序（格式统一 `%Y-%m-%d %H:%M:%S`，字符串序即时间序）。
 
 ---
 

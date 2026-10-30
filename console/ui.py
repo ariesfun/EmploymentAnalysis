@@ -415,6 +415,12 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
         <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
           <input type="checkbox" id="logAuto" checked onchange="toggleLogAuto()"> 自动刷新（5 秒）
         </label>
+        <select id="logSource" onchange="loadRunLogs()"
+          style="padding:3px 8px;border:1px solid #d5d9e0;border-radius:6px;font-size:12px;background:#fff">
+          <option value="all">全部日志</option>
+          <option value="app">服务日志</option>
+          <option value="scrape">采集日志</option>
+        </select>
         <span id="logMeta" class="sub"></span>
         <button onclick="loadRunLogs()"
           style="margin-left:auto;padding:4px 12px;border:1px solid #d5d9e0;background:#fff;border-radius:6px;cursor:pointer;font-size:12px">刷新</button>
@@ -489,7 +495,8 @@ document.addEventListener('visibilitychange', () => { if(!document.hidden) loadS
 let logTimer = null;
 async function loadRunLogs(){
   try{
-    const d = await api('/api/logs/tail?lines=200');
+    const src = $('logSource').value || 'all';
+    const d = await api(`/api/logs/tail?lines=200&source=${src}`);
     const lines = d.lines || [];
     const box = $('runLogs');
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;

@@ -409,18 +409,38 @@ def scrape_logs(limit: int = 50, only_error: int = 0, _=Depends(auth), conn=Depe
     return {"rows": rows, "summary_24h": summary}
 
 
+SCRAPE_LOG = LOG_DIR / "scrape.log"
+
+
 @app.get("/api/logs/tail")
-def logs_tail(lines: int = 200, _=Depends(auth)):
-    """读取运行日志文件尾部（实时日志查看用）。"""
-    if not LOG_FILE.exists():
-        return {"lines": [], "file": str(LOG_FILE), "size": 0}
+def logs_tail(lines: int = 200, source: str = "all", _=Depends(auth)):
+    """读取运行日志尾部（实时日志查看用）。
+
+    source: all=服务+采集合并（按时间排序）/ app=仅服务 / scrape=仅采集。
+    两个文件的时间戳前缀格式一致（%Y-%m-%d %H:%M:%S），合并后字符串排序即时间排序。
+    """
+    targets: list[tuple[str, Path]] = []
+    if source in ("all", "app"):
+        targets.append(("app", LOG_FILE))
+    if source in ("all", "scrape"):
+        targets.append(("scrape", SCRAPE_LOG))
+
     n = max(10, min(lines, 2000))
-    with LOG_FILE.open("rb") as f:
-        f.seek(0, os.SEEK_END)
-        size = f.tell()
-        f.seek(max(0, size - min(size, n * 400)))
-        data = f.read().decode("utf-8", errors="replace")
-    return {"lines": data.splitlines()[-n:], "file": str(LOG_FILE), "size": size}
+    collected: list[str] = []
+    total_size = 0
+    for _name, path in targets:
+        if not path.exists():
+            continue
+        total_size += path.stat().st_size
+        with path.open("rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - min(size, n * 400)))
+            data = f.read().decode("utf-8", errors="replace")
+        collected.extend(data.splitlines())
+
+    collected.sort()
+    return {"lines": collected[-n:], "files": [str(p) for _, p in targets], "size": total_size}
 
 
 @app.get("/api/analytics/salary_hist")

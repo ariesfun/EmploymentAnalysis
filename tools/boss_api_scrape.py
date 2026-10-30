@@ -36,6 +36,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 for _k in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"):
     os.environ.pop(_k, None)
 
+import logging  # noqa: E402
+
+# ---------------------------------------------------------------- 采集日志
+# 采集是独立进程，print 只到终端；这里同时写 logs/scrape.log，
+# 让看板「运行日志（实时）」也能看到采集过程的关键执行信息。
+_LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
+_SCRAPE_LOG = _LOG_DIR / "scrape.log"
+
+_fmt = logging.Formatter("%(asctime)s %(levelname)-5s scrape: %(message)s", "%Y-%m-%d %H:%M:%S")
+logger = logging.getLogger("scrape")
+if not logger.handlers:
+    _fh = logging.FileHandler(_SCRAPE_LOG, encoding="utf-8")
+    _fh.setFormatter(_fmt)
+    _sh = logging.StreamHandler()
+    _sh.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(_fh)
+    logger.addHandler(_sh)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 from jobmvp import store  # noqa: E402
@@ -120,7 +141,7 @@ def log_step(conn, run_id, keyword, city_code, city_name, page_no,
         )
         conn.commit()
     except Exception as e:  # noqa: BLE001
-        print("  [warn] 写采集日志失败:", type(e).__name__, str(e)[:60])
+        logger.warning("写采集日志失败: %s %s", type(e).__name__, str(e)[:60])
 
 
 def main() -> int:
@@ -142,14 +163,14 @@ def main() -> int:
         plan = conn.execute("SELECT * FROM scrape_plan WHERE source_id='boss'").fetchone()
         conn.close()
         if not plan or not plan["enabled"]:
-            print("采集计划未启用或无配置，退出")
+            logger.warning("采集计划未启用或无配置，退出")
             return 1
         keywords = list(plan["keywords"] or [])
         cities = list(plan["cities"] or [])
         pages = max(1, min(int(plan["pages_per_combo"] or 2), MAX_PAGES))
         combos = [(kw, c["code"], c["name"]) for kw in keywords for c in cities]
-        print(f"采集计划：{len(keywords)} 词 × {len(cities)} 城 × {pages} 页 "
-              f"= {len(combos) * pages} 页请求")
+        logger.info(f"采集计划：{len(keywords)} 词 × {len(cities)} 城 × {pages} 页 "
+                    f"= {len(combos) * pages} 页请求")
     else:
         combos = [(args.keyword, args.city, CITY_NAMES.get(args.city, args.city))]
         pages = max(1, min(args.pages, MAX_PAGES))
@@ -162,45 +183,45 @@ def main() -> int:
             page.goto("https://www.zhipin.com/", wait_until="domcontentloaded", timeout=30_000)
             page.wait_for_timeout(3_000)
         except Exception as e:  # noqa: BLE001
-            print("导航首页失败（继续尝试）:", type(e).__name__, str(e)[:60])
+            logger.warning("导航首页失败（继续尝试）: %s %s", type(e).__name__, str(e)[:60])
 
         log_conn = store.connect(DSN)      # 专用于写步骤日志，与 ingest 的连接分开
         for kw, city_code, city_name in combos:
             for pn in range(1, pages + 1):
-                print(f"\n=== {city_name} / {kw} 第 {pn} 页 ===")
+                logger.info(f"--- {city_name} / {kw} 第 {pn} 页 ---")
                 t0 = time.time()
                 try:
                     data = fetch_page(page, kw, city_code, pn, args.page_size)
                 except Exception as e:  # noqa: BLE001
                     elapsed = int((time.time() - t0) * 1000)
-                    print("  请求失败:", type(e).__name__, str(e)[:90])
+                    logger.error("请求失败: %s %s", type(e).__name__, str(e)[:90])
                     log_step(log_conn, None, kw, city_code, city_name, pn, 0, None,
                              elapsed, "error", f"{type(e).__name__}: {str(e)[:200]}")
                     break
                 elapsed = int((time.time() - t0) * 1000)
                 code = data.get("code")
                 jobs = (data.get("zpData") or {}).get("jobList") or []
-                print(f"  code={code} 岗位数={len(jobs)}")
+                logger.info(f"code={code} 岗位数={len(jobs)} 耗时={elapsed}ms")
 
                 run_id = None
                 if jobs and not args.no_ingest:
                     stats, run_id = ingest(jobs)
-                    print("  入库:", stats)
+                    logger.info(f"入库: {stats}")
 
                 log_step(log_conn, run_id, kw, city_code, city_name, pn, len(jobs), code,
                          elapsed, "ok" if jobs else "empty",
                          None if code in (0, None) else f"接口 code={code}")
 
                 if not jobs:
-                    print("  无更多数据")
+                    logger.info("无更多数据，结束该组合")
                     break
                 total += len(jobs)
                 if pn < pages:
                     delay = random.uniform(args.min_delay, args.max_delay)
-                    print(f"  随机延迟 {delay:.1f}s ...")
+                    logger.info(f"随机延迟 {delay:.1f}s")
                     time.sleep(delay)
         log_conn.close()
-    print(f"\n完成，共 {total} 条")
+    logger.info(f"采集完成，共 {total} 条")
     return 0
 
 
