@@ -200,7 +200,7 @@ EmploymentAnalysis/
 ├── tools/seed_dicts.py   字典与源配置播种
 ├── tools/gen_regions.py  生成行政区划映射表（源站 aa12.json）
 ├── tools/boss_api_scrape.py   BOSS 主动调 API 采集（分页 30 条/页，--plan 读配置）
-├── tools/capture_boss_current.py  采集当前页面（人工切城市后用）
+├── tools/capture_boss_current.py  采集当前页面（仅页面导航模式兜底；API 模式可直接传 --city）
 ├── tools/boss_cdp_smoke.py    CDP 连通性自检
 ├── tools/start_boss_chrome.bat  启动 BOSS 专用 Chrome（9223 + 独立 profile）
 ├── tests/                71 个用例（需真实 PG）
