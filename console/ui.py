@@ -50,6 +50,19 @@ border:1px solid var(--line);background:#f8f9fb;color:var(--muted)}
 .bar{height:7px;background:#eef1f5;border-radius:999px;overflow:hidden;margin-top:5px}
 .bar>i{display:block;height:100%;background:var(--accent);border-radius:999px}
 .empty{color:#9aa1ab;font-size:12.5px;padding:10px 0}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.filters select,.filters input{padding:5px 9px;border:1px solid #d5d9e0;border-radius:8px;
+font-size:12.5px;background:#fff;color:var(--ink)}
+.filters input{min-width:200px}
+.filters button,.pager button{padding:5px 12px;border:1px solid #d5d9e0;border-radius:8px;
+background:#fff;font-size:12.5px;cursor:pointer}
+.filters button:hover,.pager button:hover{background:#f6f7f9}
+.pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;
+margin-top:10px;font-size:12.5px;color:var(--muted)}
+.pager button:disabled{opacity:.45;cursor:not-allowed}
+td a{color:var(--accent);text-decoration:none;white-space:nowrap}
+td a:hover{text-decoration:underline}
+tr:hover td{background:#fafbfc}
 .err{background:#fdeceb;border:1px solid #f5c6c2;color:#b3261e;padding:10px 14px;
 border-radius:10px;font-size:12.5px;margin-bottom:14px}
 code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12px}
@@ -104,8 +117,33 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
 
   <div class="card">
     <h2>薪资分位（按岗类，P25 / P50 / P75）</h2>
-    <p class="hint">口径 v1.1：仅 status=active 且 salary_ok 且 salary_unit=month，排除未映射岗类；样本 &lt; 30 不输出</p>
+    <p class="hint">
+      把该岗类所有岗位的月薪<b>从低到高排成一队</b>：
+      <b>P25</b> 是排在第 1/4 位的（偏低的价）、
+      <b>P50</b> 是正中间那个（典型水平，一半岗位比它低、一半比它高）、
+      <b>P75</b> 是排在第 3/4 位的（偏高的价）。
+      也就是说 <b>P25～P75 之间，就是大多数公司开出的价</b>。
+      口径：只统计在招、且能解析出月薪数字的岗位，样本少于 30 条的岗类不展示。
+    </p>
     <div id="salary"></div>
+  </div>
+
+  <div class="card">
+    <h2>在招岗位（可直接投递）</h2>
+    <p class="hint">点「查看详情」跳到源站岗位页，可在原站投递；这里只有岗位侧字段，不含 HR 联系方式</p>
+    <div class="filters">
+      <select id="fCat"><option value="">全部岗类</option></select>
+      <select id="fCity"><option value="">全部城市</option></select>
+      <input id="fQ" placeholder="搜岗位名 / 公司名" onkeydown="if(event.key==='Enter')loadJobs(0)">
+      <button onclick="loadJobs(0)">查询</button>
+      <span class="sub" id="jobCount"></span>
+    </div>
+    <div id="jobList"></div>
+    <div class="pager">
+      <button id="prevBtn" onclick="pageJobs(-1)">上一页</button>
+      <span id="pageInfo"></span>
+      <button id="nextBtn" onclick="pageJobs(1)">下一页</button>
+    </div>
   </div>
 
   <div class="grid g2">
@@ -228,6 +266,42 @@ function table(headers, rows, empty){
   return `<table><thead><tr>${th}</tr></thead><tbody>${tb}</tbody></table>`;
 }
 
+const JOB_PAGE = 20;
+let jobOffset = 0, jobTotal = 0;
+
+async function loadJobs(offset){
+  jobOffset = Math.max(0, offset || 0);
+  const p = new URLSearchParams({limit: JOB_PAGE, offset: jobOffset});
+  const cat = $('fCat').value, city = $('fCity').value, q = $('fQ').value.trim();
+  if(cat) p.set('category', cat);
+  if(city) p.set('city', city);
+  if(q) p.set('q', q);
+  try{
+    const d = await api('/api/jobs?' + p.toString());
+    jobTotal = d.total;
+    $('jobCount').textContent = `共 ${d.total} 条`;
+    $('jobList').innerHTML = table(
+      [{label:'岗位'},{label:'公司'},{label:'城市'},{label:'薪资'},{label:'发布'},{label:'操作'}],
+      d.rows.map(r => [
+        esc(r.title_raw),
+        esc(r.company_name || '-'),
+        esc([r.city, r.district].filter(Boolean).join('·') || '-'),
+        esc(r.salary_raw || '-'),
+        esc((r.posted_at || '').slice(0, 10) || '-'),
+        r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">查看详情 ↗</a>` : '-'
+      ]),
+      '没有符合条件的岗位');
+    $('pageInfo').textContent =
+      `${Math.floor(jobOffset / JOB_PAGE) + 1} / ${Math.max(1, Math.ceil(jobTotal / JOB_PAGE))}`;
+    $('prevBtn').disabled = jobOffset <= 0;
+    $('nextBtn').disabled = jobOffset + JOB_PAGE >= jobTotal;
+  }catch(e){
+    $('jobList').innerHTML = `<div class="empty">加载失败：${esc(e.message)}</div>`;
+  }
+}
+
+function pageJobs(delta){ loadJobs(jobOffset + delta * JOB_PAGE); }
+
 async function triggerRun(id){
   if(!confirm('立即采集 ' + id + '？约需 60~90 秒，期间运行历史里会看到 running。')) return;
   const r = await fetch(`/api/sources/${id}/run`, {method:'POST', headers:{'X-API-Key':KEY}});
@@ -328,6 +402,14 @@ async function main(){
     $('unmapped').innerHTML = table(
       [{label:'岗位名'},{label:'次数',num:1}],
       unmapped.map(r => [esc(r.term), r.cnt]), '没有未映射项');
+
+    $('fCat').innerHTML = '<option value="">全部岗类</option>' +
+      sortDesc(fam).map(([k]) => k).filter(k => k !== '未映射')
+        .map(k => `<option>${esc(k)}</option>`).join('');
+    $('fCity').innerHTML = '<option value="">全部城市</option>' +
+      sortDesc(city).map(([k]) => k).filter(k => k !== '未知')
+        .map(k => `<option>${esc(k)}</option>`).join('');
+    loadJobs(0);
 
     $('audit').innerHTML = table(
       [{label:'时间'},{label:'动作'},{label:'对象'},{label:'操作者'}],

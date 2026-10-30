@@ -23,6 +23,28 @@ DEFAULT_MOHRSS_KEYWORDS = [
 ]
 
 
+# 优先城市（区划码, 名称）：采集配额先给这些城市，剩余才补全国
+DEFAULT_CITIES: list[tuple[str, str]] = [
+    ("610100", "西安"),
+    ("510100", "成都"),
+]
+
+
+def _mohrss_cities() -> list[tuple[str, str]]:
+    """MOHRSS_CITIES="610100:西安,510100:成都"；设为空串则只抓全国。"""
+    raw = os.environ.get("MOHRSS_CITIES")
+    if raw is None:
+        return list(DEFAULT_CITIES)
+    out = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        code, _, name = part.partition(":")
+        out.append((code.strip(), (name or code).strip()))
+    return out
+
+
 def _mohrss_keywords() -> list[str]:
     raw = os.environ.get("MOHRSS_KEYWORDS", "")
     if raw.strip():
@@ -36,6 +58,7 @@ REGISTRY: dict[str, Callable[[], SourceAdapter]] = {
         httpx.Client(timeout=25, follow_redirects=True),
         "http://job.mohrss.gov.cn",
         keywords=_mohrss_keywords(),
+        cities=_mohrss_cities(),
     ),
     # B 级：商业招聘平台，默认关闭，启用需审批备注。
     # 环境变量：BOSS_MODE=http|browser、BOSS_KEYWORD、BOSS_CITY

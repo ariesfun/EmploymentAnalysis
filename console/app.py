@@ -102,6 +102,38 @@ def metric(name: str, limit: int = 200, _=Depends(auth), conn=Depends(db)):
     rows = conn.execute(f"SELECT * FROM {view} LIMIT %s", (min(limit, 2000),)).fetchall()   # view 来自白名单
     return {"metric": name, "version": METRIC_VERSION, "rows": rows}
 
+@app.get("/api/jobs")
+def jobs(category: str = "", city: str = "", q: str = "",
+         limit: int = 50, offset: int = 0, _=Depends(auth), conn=Depends(db)):
+    """岗位明细（仅当前在招）。用于运营/用户直接跳转源站投递。
+
+    只返回岗位侧字段：不含任何 HR 联系方式（那部分在采集阶段就被丢弃）。
+    """
+    where = ["status = 'active'"]
+    args: list = []
+    if category:
+        where.append("category = %s")
+        args.append(category)
+    if city:
+        where.append("city = %s")
+        args.append(city)
+    if q:
+        where.append("(title_raw ILIKE %s OR company_name ILIKE %s)")
+        args += [f"%{q}%", f"%{q}%"]
+    cond = " AND ".join(where)
+
+    total = conn.execute(f"SELECT count(*) AS n FROM job WHERE {cond}", args).fetchone()["n"]
+    rows = conn.execute(
+        f"""SELECT job_pk, title_raw, company_name, city, district, salary_raw,
+                   salary_ok, category, posted_at, url
+            FROM job WHERE {cond}
+            ORDER BY posted_at DESC NULLS LAST, job_pk DESC
+            LIMIT %s OFFSET %s""",
+        args + [min(limit, 200), max(offset, 0)],
+    ).fetchall()
+    return {"total": total, "limit": limit, "offset": offset, "rows": rows}
+
+
 @app.get("/api/audit")
 def audit_list(limit: int = 100, _=Depends(auth), conn=Depends(db)):
     return conn.execute("SELECT at,actor,action,target,detail FROM audit_log ORDER BY id DESC LIMIT %s", (min(limit, 500),)).fetchall()

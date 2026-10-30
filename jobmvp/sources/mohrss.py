@@ -71,7 +71,9 @@ class MohrssAdapter(HttpAdapter):
     captcha_markers: tuple[str, ...] = ("请完成安全验证", "访问验证")
 
     def __init__(self, client, base_url: str = "http://job.mohrss.gov.cn",
-                 keyword: str = "", keywords: list[str] | None = None):
+                 keyword: str = "", keywords: list[str] | None = None,
+                 cities: list[tuple[str, str]] | None = None,
+                 pages_per_keyword: int = 2):
         super().__init__(client, base_url)
         self.keyword = keyword
         # 多关键词轮转：一次运行内依次覆盖多个检索词，避免只抓单一方向
@@ -79,31 +81,43 @@ class MohrssAdapter(HttpAdapter):
         if not kws and keyword.strip():
             kws = [keyword.strip()]
         self.keywords = kws
+        # 优先城市：[(区划码, 城市名)]，按顺序优先分配采集配额
+        self.cities = list(cities or [])
+        self.pages_per_keyword = max(1, int(pages_per_keyword))
 
     # ------------------------------------------------------------ 发现
     def discover(self, max_pages: int):
-        """按关键词轮转产出列表页 URL。
+        """产出列表页 URL：**优先城市** → 剩余配额补全国。
 
-        源站的 textfield 检索会匹配岗位描述，相关性一般，但能显著提高目标岗类的密度；
-        不传关键词时退回全站顺序（样本会偏向少数发布机构）。
+        排序逻辑：city1 × 关键词 × 第1页 → city1 × 关键词 × 第2页 → city2 … → 全国。
+        这样即使 max_pages 很小，拿到的也是优先城市的样本。
         """
         total = max(1, int(max_pages))
-        if not self.keywords:
-            for page_no in range(1, total + 1):
-                yield self._list_url("", page_no)
-            return
-        n = len(self.keywords)
-        for i in range(total):
-            kw = self.keywords[i % n]
-            page_no = i // n + 1
-            yield self._list_url(kw, page_no)
+        kws = self.keywords or [""]
+        urls: list[str] = []
+
+        for code, name in self.cities:
+            for page in range(1, self.pages_per_keyword + 1):
+                for kw in kws:
+                    urls.append(self._list_url(kw, page, code, name))
+
+        if len(urls) < total:                      # 城市配额没吃满，用全国补齐
+            for page in range(1, total + 1):
+                for kw in kws:
+                    urls.append(self._list_url(kw, page))
+
+        return urls[:total]
 
     @staticmethod
-    def _list_url(keyword: str, page_no: int) -> str:
+    def _list_url(keyword: str, page_no: int,
+                  area_code: str = "", area_name: str = "") -> str:
         # 必须走 urlencode：中文关键词不编码会被服务端忽略，返回一堆无关岗位
         params = {"pageNo": page_no, "pagecount": "", "orderType": "score", "s_acb241": "0"}
         if keyword:
             params["textfield"] = keyword
+        if area_code:
+            params["AREA"] = area_code
+            params["AREA_name"] = area_name
         return f"{_LIST_URL}?{urlencode(params)}"
 
     # ------------------------------------------------------------ 解析
@@ -178,7 +192,9 @@ class MohrssAdapter(HttpAdapter):
 
             out.append({
                 "source_job_id": job_id,
-                "url": (r.get("ace760") or "").strip() or _DETAIL_URL.format(job_id=job_id),
+                # 源站 JSON 里的 URL 自带 HTML 实体（&amp;），先反转义再入库
+                "url": html_lib.unescape((r.get("ace760") or "").strip())
+                        or _DETAIL_URL.format(job_id=job_id),
                 "title_raw": (r.get("aca112") or "").strip(),
                 "location_raw": location_raw,
                 "salary_raw": salary_raw,

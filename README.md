@@ -75,6 +75,7 @@ JOBMVP_DSN=postgresql://mvp:mvp@127.0.0.1:5432/jobmvp JOBMVP_API_KEY=devkey \
 | `GET /api/sources/{id}/runs` | 运行历史 |
 | `GET /api/runs/{run_id}/errors` | 解析失败样本 |
 | `GET /api/quality` | 数据质量面板 |
+| `GET /api/jobs` | 岗位明细（`category` / `city` / `q` 过滤 + 分页），含源站详情链接 |
 | `GET /api/unmapped` | 未映射岗位名队列（供人工归类） |
 | `GET /api/metrics/{name}` | 指标视图（白名单） |
 | `GET /api/audit` | 审计日志 |
@@ -142,7 +143,10 @@ DEFAULT_MOHRSS_KEYWORDS = [
 ]
 ```
 
-- 覆盖方式：`MOHRSS_KEYWORDS="Java,Go"`（逗号分隔）或 `tools/seed_dicts.py` 里改默认值；
+- **城市优先**：默认 `DEFAULT_CITIES = [("610100","西安"), ("510100","成都")]`，
+  `discover()` 先排「城市 × 关键词 × 页」，剩余配额才补全国；
+  可用 `MOHRSS_CITIES="610100:西安,510100:成都"` 覆盖，设空串则只抓全国；
+- 覆盖方式：`MOHRSS_KEYWORDS="Java,Go"`（逗号分隔）或 `jobmvp/registry.py` 里改默认值；
 - 检索词匹配的是**岗位描述**，相关性有限，仍需靠岗类字典二次归类；
 - 注意 `discover()` 必须走 `urlencode` —— 中文关键词不编码会被服务端忽略，返回一堆无关岗位（曾踩过）。
 
@@ -192,6 +196,21 @@ DEFAULT_MOHRSS_KEYWORDS = [
 | `m_salary_pctl_by_category` | **v1.1 新增**：同上但只按**岗类**分组，并排除 `category IS NULL`；小样本下才有可用分位数 |
 | `m_skill_weekly` | `unnest(skills)` 按周 × 岗类 × 技能 |
 | `m_quality` | 薪资解析率 / 地区匹配率 / 岗类映射率 / 技能命中率 |
+
+### 6.1 P25 / P50 / P75 怎么读
+
+把某个岗类的岗位月薪**从低到高排成一队**：
+
+- **P25**：排在第 1/4 位的薪资 —— 偏低的价，只有 25% 的岗位比它更低；
+- **P50（中位数）**：正中间那个 —— 典型水平，一半岗位比它低、一半比它高；
+- **P75**：排在第 3/4 位的 —— 偏高的价，只有 25% 的岗位比它更高。
+
+所以 **P25～P75 这个区间，就是「大多数公司开出的价」**。
+举例：后端开发 P25 6.5K / P50 9.5K / P75 14.4K，意思是
+「四分之一的后端岗低于 6.5K，典型水平 9.5K，四分之一高于 14.4K」。
+
+为什么不用平均值：少数超高薪会把均值拉高，分位数不受极端值影响，更接近真实行情。
+样本少于 30 条的岗类不展示分位数（样本太小时分位数没有统计意义）。
 
 口径变更必须升 `METRIC_VERSION` 并留档。
 

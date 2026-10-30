@@ -38,10 +38,10 @@ def _page(rows=None) -> RawPage:
     return RawPage(url="http://job.mohrss.gov.cn/x", status=200, body=body)
 
 
-def _adapter(handler=None):
+def _adapter(handler=None, **kw):
     handler = handler or (lambda req: httpx.Response(200, text=""))
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    return MohrssAdapter(client, "http://job.mohrss.gov.cn")
+    return MohrssAdapter(client, "http://job.mohrss.gov.cn", **kw)
 
 
 # ---------------------------------------------------------------- 粒度判定
@@ -105,12 +105,41 @@ def test_parse_single_sided_salary():
     assert items[0]["salary_raw"] == "面议"
 
 
+def test_parse_unescapes_url_entities():
+    """源站 JSON 里的 URL 自带 &amp;，必须反转义，否则详情链接会 404。"""
+    rows = [{**_ROWS[0],
+             "ace760": "https://example.invalid/job?id=1&amp;company=2"}]
+    assert _adapter().parse(_page(rows))[0]["url"] == \
+        "https://example.invalid/job?id=1&company=2"
+
+
 def test_parse_rejects_page_without_data_block():
     with pytest.raises(ValueError):
         _adapter().parse(RawPage(url="u", status=200, body="<html>改版了</html>"))
 
 
 # ---------------------------------------------------------------- 抓取合规
+def test_discover_prioritises_cities():
+    """优先城市必须排在全国之前，且带 AREA 参数。"""
+    a = _adapter(keywords=["Java", "前端"], pages_per_keyword=1,
+                 cities=[("610100", "西安"), ("510100", "成都")])
+    urls = list(a.discover(4))
+    assert len(urls) == 4
+    assert all("AREA=" in u for u in urls)
+    assert "AREA=610100" in urls[0] and "AREA=610100" in urls[1]
+    assert "AREA=510100" in urls[2] and "AREA=510100" in urls[3]
+
+
+def test_discover_fills_remaining_quota_with_national():
+    """城市配额用完后，剩余页数补全国（不带 AREA）。"""
+    a = _adapter(keywords=["Java", "前端"], pages_per_keyword=1,
+                 cities=[("610100", "西安"), ("510100", "成都")])
+    urls = list(a.discover(6))
+    assert len(urls) == 6
+    assert all("AREA=" in u for u in urls[:4])      # 4 页城市
+    assert all("AREA=" not in u for u in urls[4:])  # 2 页全国
+
+
 def test_discover_respects_max_pages():
     urls = list(_adapter().discover(3))
     assert len(urls) == 3 and "pageNo=3" in urls[-1]
