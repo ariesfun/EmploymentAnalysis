@@ -26,8 +26,8 @@ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft
 .sidebar{width:216px;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;transition:width .18s ease;flex-shrink:0}
 .sidebar.collapsed{width:62px}
 .brand{display:flex;align-items:center;gap:8px;padding:12px 10px;border-bottom:1px solid var(--line);min-height:56px}
-.brand .logo{width:24px;height:24px;color:var(--accent);flex-shrink:0}
-.brand .logo svg{width:24px;height:24px}
+.brand .logo{width:28px;height:28px;flex-shrink:0;display:flex}
+.brand .logo svg{width:28px;height:28px;display:block;border-radius:9px;box-shadow:0 2px 6px rgba(79,140,255,.28)}
 .brand-text{flex:1;font-size:13px;font-weight:650;line-height:1.3;white-space:nowrap;overflow:hidden}
 .sidebar.collapsed .brand{justify-content:center;padding:12px 0}
 .sidebar.collapsed .brand-text,.sidebar.collapsed .brand .logo{display:none}
@@ -96,7 +96,19 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
   <aside class="sidebar" id="sidebar">
     <div class="brand">
       <span class="logo">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <svg viewBox="0 0 32 32" width="28" height="28">
+          <defs>
+            <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#4f8cff"/>
+              <stop offset="100%" stop-color="#6d5efc"/>
+            </linearGradient>
+          </defs>
+          <rect width="32" height="32" rx="9" fill="url(#brandGrad)"/>
+          <rect x="7.4" y="18" width="3.6" height="6.6" rx="1.3" fill="#fff" opacity="0.82"/>
+          <rect x="14.2" y="13" width="3.6" height="11.6" rx="1.3" fill="#fff" opacity="0.92"/>
+          <rect x="21" y="8" width="3.6" height="16.6" rx="1.3" fill="#fff"/>
+          <path d="M9.2 15.2 L15.9 10.8 L22.8 6.2" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" opacity="0.7"/>
+        </svg>
       </span>
       <span class="brand-text">招聘市场数据<br>实时分析</span>
       <button class="collapse-btn" id="collapseBtn" title="折叠/展开菜单">
