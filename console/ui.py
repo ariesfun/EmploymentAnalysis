@@ -305,6 +305,9 @@ function fmtSalary(r){
   return esc(body + months);
 }
 
+// 岗位来源显示名（source_id -> 中文）
+const SOURCE_NAME = {boss: 'BOSS直聘', mohrss: '中国公共招聘网', company: '公司官网'};
+
 const JOB_PAGE = 20;
 let jobOffset = 0, jobTotal = 0;
 
@@ -322,12 +325,13 @@ async function loadJobs(offset){
     jobTotal = d.total;
     $('jobCount').textContent = `共 ${d.total} 条`;
     $('jobList').innerHTML = table(
-      [{label:'岗位'},{label:'公司'},{label:'城市'},{label:'月薪'},{label:'发布'},{label:'操作'}],
+      [{label:'岗位'},{label:'公司'},{label:'城市'},{label:'月薪'},{label:'来源'},{label:'发布'},{label:'操作'}],
       d.rows.map(r => [
         esc(r.title_raw),
         esc(r.company_name || '-'),
         esc([r.city, r.district].filter(Boolean).join('·') || '-'),
         fmtSalary(r),
+        esc(SOURCE_NAME[r.source_id] || r.source_id || '-'),
         esc((r.posted_at || '').slice(0, 10) || '-'),
         r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">查看详情 ↗</a>` : '-'
       ]),

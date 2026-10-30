@@ -131,7 +131,7 @@ def jobs(category: str = "", city: str = "", q: str = "", sort: str = "posted",
 
     total = conn.execute(f"SELECT count(*) AS n FROM m_job_dedup WHERE {cond}", args).fetchone()["n"]
     rows = conn.execute(
-        f"""SELECT job_pk, title_raw, company_name, city, district, salary_raw,
+        f"""SELECT job_pk, source_id, title_raw, company_name, city, district, salary_raw,
                    salary_min, salary_max, salary_unit, salary_months,
                    salary_ok, category, posted_at, url
             FROM m_job_dedup WHERE {cond}
