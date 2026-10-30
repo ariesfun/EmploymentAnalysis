@@ -128,6 +128,25 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
     </div>
   </div>
 
+  <div class="grid g2">
+    <div class="card">
+      <h2>薪资分布直方图</h2>
+      <p class="hint">月薪区间（K）的岗位数量分布<span class="asof"></span></p>
+      <div id="salaryHist"></div>
+    </div>
+    <div class="card">
+      <h2>经验要求分布</h2>
+      <p class="hint">按岗位要求的最低经验分档<span class="asof"></span></p>
+      <div id="expDist"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>技能 × 岗类矩阵</h2>
+    <p class="hint">Top 技能在各岗类的出现次数（颜色越深越密集）<span class="asof"></span></p>
+    <div id="skillMatrix"></div>
+  </div>
+
   <div class="card">
     <h2>薪资分位（按岗类，P25 / P50 / P75）</h2>
     <p class="hint">
@@ -218,6 +237,44 @@ function hbar(items, color, fmt){
     s += `<text x="${w-4}" y="${y+bh/2+4}" text-anchor="end" font-size="11" fill="#6b7280">${esc(fmt?fmt(val):val)}</text>`;
   });
   return s + '</svg>';
+}
+
+function vbar(items, color){
+  if(!items.length) return '<div class="empty">暂无数据</div>';
+  const max = Math.max(...items.map(i => i[1])) || 1;
+  const w = 520, h = 210, ml = 6, mb = 26, mt = 14;
+  const bw = (w - ml * 2) / items.length;
+  let s = `<svg viewBox="0 0 ${w} ${h}" width="100%">`;
+  items.forEach(([lab, val], i) => {
+    const bh = (h - mb - mt) * val / max;
+    const x = ml + i * bw + bw * 0.16;
+    const y = h - mb - bh;
+    s += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(bw*0.68).toFixed(1)}" height="${bh.toFixed(1)}" rx="3" fill="${color}" opacity="0.85"/>`;
+    s += `<text x="${(x+bw*0.34).toFixed(1)}" y="${(y-4).toFixed(1)}" text-anchor="middle" font-size="10" fill="#6b7280">${val}</text>`;
+    s += `<text x="${(x+bw*0.34).toFixed(1)}" y="${h-mb+14}" text-anchor="middle" font-size="10" fill="#6b7280">${esc(lab)}</text>`;
+  });
+  return s + '</svg>';
+}
+
+function heatmap(rows, categories, skills){
+  if(!rows.length) return '<div class="empty">暂无数据</div>';
+  const map = {}; let max = 1;
+  rows.forEach(r => { const k = r.category + '|' + r.skill; map[k] = r.n; if(r.n > max) max = r.n; });
+  let s = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
+  s += '<tr><th style="text-align:left;padding:5px 8px;color:#6b7280;font-weight:500;white-space:nowrap">岗类 \\ 技能</th>';
+  skills.forEach(sk => s += `<th style="padding:5px 8px;color:#6b7280;font-weight:500;white-space:nowrap">${esc(sk)}</th>`);
+  s += '</tr>';
+  categories.forEach(cat => {
+    s += `<tr><td style="padding:5px 8px;white-space:nowrap;color:#1f2328">${esc(cat)}</td>`;
+    skills.forEach(sk => {
+      const n = map[cat + '|' + sk] || 0;
+      const a = n ? Math.min(0.12 + 0.88 * n / max, 0.95) : 0;
+      const bg = n ? `rgba(47,111,235,${a.toFixed(2)})` : 'transparent';
+      s += `<td style="padding:5px 8px;text-align:center;background:${bg};color:${a > 0.5 ? '#fff' : '#1f2328'};border-radius:3px">${n || ''}</td>`;
+    });
+    s += '</tr>';
+  });
+  return s + '</table></div>';
 }
 
 function line(points){
@@ -378,7 +435,7 @@ async function main(){
     return;
   }
   try{
-    const [sources, quality, activeR, dailyR, salaryR, runs, unmapped, audit, jobsR, skillsR, domainsR, metaR] = await Promise.all([
+    const [sources, quality, activeR, dailyR, salaryR, runs, unmapped, audit, jobsR, skillsR, domainsR, metaR, salaryHistR, expR, skillMatrixR] = await Promise.all([
       api('/api/sources'), api('/api/quality'),
       api('/api/metrics/active_jobs?limit=2000'),
       api('/api/metrics/new_jobs_daily?limit=2000'),
@@ -390,6 +447,9 @@ async function main(){
       api('/api/analytics/skills?limit=15'),
       api('/api/analytics/domains'),
       api('/api/analytics/meta'),
+      api('/api/analytics/salary_hist?step=5'),
+      api('/api/analytics/experience'),
+      api('/api/analytics/skill_matrix?top=8'),
     ]);
 
     // 指标接口返回 {metric, version, rows}
@@ -460,6 +520,20 @@ async function main(){
     $('skills').innerHTML = hbar(skills, '#7c3aed');
     const domains = (domainsR.rows || []).map(r => [r.domain, r.n]);
     $('domains').innerHTML = hbar(domains, '#0891b2');
+
+    // 薪资分布直方图（月薪区间）
+    const hist = (salaryHistR.rows || []).map(r => [`${r.lo}-${r.lo + 5}`, r.n]);
+    $('salaryHist').innerHTML = vbar(hist, '#2f6feb');
+
+    // 经验要求分布
+    const exp = (expR.rows || []).map(r => [r.bucket, r.n]);
+    $('expDist').innerHTML = hbar(exp, '#0891b2');
+
+    // 技能 × 岗类矩阵
+    const mrows = skillMatrixR.rows || [];
+    const mcats = [...new Set(mrows.map(r => r.category))];
+    const mskills = [...new Set(mrows.map(r => r.skill))];
+    $('skillMatrix').innerHTML = heatmap(mrows, mcats, mskills);
     $('cities').innerHTML = hbar(sortDesc(city).slice(0, 10), '#12a594');
 
     $('salary').innerHTML = table(

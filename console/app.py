@@ -187,6 +187,57 @@ def analytics_meta(_=Depends(auth), conn=Depends(db)):
     return r
 
 
+@app.get("/api/analytics/salary_hist")
+def analytics_salary_hist(step: int = 5, _=Depends(auth), conn=Depends(db)):
+    """薪资区间分布直方图（月薪 K，按 step 分桶）。"""
+    rows = conn.execute(
+        """SELECT (floor(((salary_min + salary_max) / 2) / %s) * %s)::int AS lo,
+                  count(*) AS n
+           FROM m_job_dedup
+           WHERE salary_ok AND salary_unit = 'month'
+             AND salary_min IS NOT NULL AND salary_max IS NOT NULL
+           GROUP BY 1 ORDER BY 1""",
+        (step, step),
+    ).fetchall()
+    return {"step": step, "rows": rows}
+
+
+@app.get("/api/analytics/experience")
+def analytics_experience(_=Depends(auth), conn=Depends(db)):
+    """经验要求分布。"""
+    rows = conn.execute(
+        """SELECT CASE
+                 WHEN exp_min_years IS NULL THEN '未标注'
+                 WHEN exp_min_years = 0 AND coalesce(exp_max_years, 0) = 0 THEN '应届/不限'
+                 WHEN exp_min_years <= 1 THEN '1年以内'
+                 WHEN exp_min_years <= 3 THEN '1-3年'
+                 WHEN exp_min_years <= 5 THEN '3-5年'
+                 WHEN exp_min_years <= 10 THEN '5-10年'
+                 ELSE '10年以上' END AS bucket,
+               count(*) AS n
+           FROM m_job_dedup GROUP BY 1 ORDER BY 2 DESC"""
+    ).fetchall()
+    return {"rows": rows}
+
+
+@app.get("/api/analytics/skill_matrix")
+def analytics_skill_matrix(top: int = 8, _=Depends(auth), conn=Depends(db)):
+    """技能 × 岗类矩阵（Top 技能在各岗类的出现次数），用于热力图。"""
+    rows = conn.execute(
+        """WITH top_skill AS (
+             SELECT s AS skill, count(*) AS total
+             FROM m_job_dedup, unnest(skills) AS s
+             GROUP BY 1 ORDER BY 2 DESC LIMIT %s
+           )
+           SELECT j.category, s AS skill, count(*) AS n
+           FROM m_job_dedup j, unnest(j.skills) AS s
+           WHERE j.category IS NOT NULL AND s IN (SELECT skill FROM top_skill)
+           GROUP BY 1,2 ORDER BY 3 DESC""",
+        (min(top, 20),),
+    ).fetchall()
+    return {"rows": rows}
+
+
 @app.get("/api/audit")
 def audit_list(limit: int = 100, _=Depends(auth), conn=Depends(db)):
     return conn.execute("SELECT at,actor,action,target,detail FROM audit_log ORDER BY id DESC LIMIT %s", (min(limit, 500),)).fetchall()
