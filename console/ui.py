@@ -418,12 +418,19 @@ async function loadStatus(){
                              : `${Math.floor(up / 60)}m ${up % 60}s`;
     const srcs = d.sources || [];
     const enabled = srcs.filter(x => x.enabled).length;
+    // BOSS 账号：真实探测结果（ok=登录有效 / warn=登录异常 / bad=Chrome未启动）
+    const ba = d.boss_account || {};
+    const baState = ba.state || 'unknown';
+    const baDot = baState === 'ok' ? 'ok' : (baState === 'warn' ? 'warn' : 'bad');
+    const baText = baState === 'ok' ? '账号 正常'
+                 : baState === 'warn' ? `账号 ${ba.detail || '异常'}`
+                 : '账号 Chrome未启动';
     $('statusbar').innerHTML =
       `<div class="st"><i class="dot ${d.monitor ? 'ok' : 'bad'}"></i>监控 ${d.monitor ? '运行中' : '已停止'}</div>` +
       `<div class="st">最近采集 ${agoStr}</div>` +
       `<div class="st">运行 ${upStr}</div>` +
       `<div class="st"><i class="dot ${d.network_ok ? 'ok' : 'bad'}"></i>网络 ${d.network_ok ? '在线' : '离线'}</div>` +
-      `<div class="st"><i class="dot ${d.boss_cdp_ok ? 'ok' : 'warn'}"></i>账号 ${d.boss_cdp_ok ? '就绪' : 'Chrome未启动'}</div>` +
+      `<div class="st" title="${esc((d.boss_account || {}).detail || '')}"><i class="dot ${baDot}"></i>${baText}</div>` +
       `<div class="st">数据源 ${enabled}/${srcs.length}</div>`;
   }catch(e){
     $('statusbar').innerHTML = '<div class="st"><i class="dot bad"></i>状态获取失败</div>';

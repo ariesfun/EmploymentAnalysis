@@ -265,14 +265,62 @@ def _check_network() -> bool:
         return False
 
 
-def _check_boss_cdp() -> bool:
-    """BOSS 账号功能是否就绪：Chrome 9223 可达即视为可用（登录态需人工确认）。"""
+_BOSS_PROBE = {"ts": 0.0, "state": "unknown", "detail": "未探测"}
+
+
+def _probe_boss_account() -> dict:
+    """真实探测 BOSS 账号功能是否正常。
+
+    不只看 Chrome 端口，而是通过 CDP 用页面 cookie 调一次 joblist API（pageSize=1），
+    看返回 code 是否为 0——这才代表「登录态有效 + 接口可正常调用」。
+    结果缓存 120 秒，避免状态栏轮询频繁打 BOSS。
+    """
+    now = time.time()
+    if now - _BOSS_PROBE["ts"] < 120:
+        return {"state": _BOSS_PROBE["state"], "detail": _BOSS_PROBE["detail"],
+                "checked_at": _BOSS_PROBE["ts"]}
+
+    state, detail = "bad", "Chrome 未启动"
     try:
         import httpx
         r = httpx.get("http://127.0.0.1:9223/json/version", timeout=2)
-        return r.status_code == 200
-    except Exception:
-        return False
+        if r.status_code != 200:
+            raise RuntimeError(f"CDP HTTP {r.status_code}")
+
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            b = pw.chromium.connect_over_cdp("http://127.0.0.1:9223")
+            ctx = b.contexts[0] if b.contexts else b.new_context()
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            # 必须处在 zhipin.com 上下文，否则 page.request 缺少站点 cookie/头，会返回 code=36
+            if "zhipin.com" not in (page.url or ""):
+                try:
+                    page.goto("https://www.zhipin.com/", wait_until="domcontentloaded", timeout=20000)
+                    page.wait_for_timeout(1500)
+                except Exception:  # noqa: BLE001
+                    pass
+            resp = page.request.get(
+                "https://www.zhipin.com/wapi/zpgeek/search/joblist.json"
+                "?scene=1&query=%E5%BC%80%E5%8F%91&city=101110100&page=1&pageSize=1",
+                timeout=15000,
+            )
+            data = resp.json()
+            code = data.get("code")
+            if code == 0:
+                state, detail = "ok", "正常 · 登录有效"
+            elif code == 36:
+                state, detail = "warn", "异常 · 需在浏览器完成验证"
+            elif code in (37, 401, 403):
+                state, detail = "warn", f"失效 · 请重新登录（{code}）"
+            else:
+                state, detail = "warn", f"接口异常（code={code}）"
+    except Exception as e:  # noqa: BLE001
+        if state != "ok":
+            state = "bad" if "9223" in str(e) or "CDP" in str(e) else "warn"
+            detail = f"探测失败：{type(e).__name__}"
+
+    _BOSS_PROBE.update({"ts": now, "state": state, "detail": detail})
+    return {"state": state, "detail": detail, "checked_at": now}
 
 
 @app.get("/api/status")
@@ -286,7 +334,7 @@ def get_status(_=Depends(auth), conn=Depends(db)):
         "last_scrape_at": last,
         "uptime_seconds": int(time.time() - START_TIME),
         "network_ok": _check_network(),
-        "boss_cdp_ok": _check_boss_cdp(),
+        "boss_account": _probe_boss_account(),
         "sources": [{"source_id": x["source_id"], "enabled": x["enabled"]} for x in srcs],
     }
 
