@@ -75,9 +75,10 @@ def test_tier_b_requires_approval(conn):
     conn.rollback()
 
 def test_metrics_min_sample_and_unmapped(conn, tmp_path):
-    run(conn, tmp_path, [[J(i) for i in range(29)]])
+    # 注意：岗位用不同公司名，否则业务去重(m_job_dedup)会把同岗合并，样本数骤降
+    run(conn, tmp_path, [[J(i, company_name=f"A{i}") for i in range(29)]])
     assert conn.execute("SELECT count(*) n FROM m_salary_pctl").fetchone()["n"] == 0     # n<30 屏蔽
-    run(conn, tmp_path, [[J(i) for i in range(30)]])
+    run(conn, tmp_path, [[J(i, company_name=f"A{i}") for i in range(30)]])
     r = conn.execute("SELECT n,p50_k FROM m_salary_pctl").fetchone()
     assert (r["n"], float(r["p50_k"])) == (30, 30.0)
     run(conn, tmp_path, [[J(100, title_raw="销售经理")]])

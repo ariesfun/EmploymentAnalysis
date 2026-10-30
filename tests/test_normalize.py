@@ -21,6 +21,16 @@ def test_salary_ok(raw, unit, lo, hi, months, ok):
 def test_salary_bad(raw):
     assert parse_salary(raw).ok is False
 
+@pytest.mark.parametrize("raw,unit,lo,hi,months,ok", [
+    ("3000元以上/月", "month", 3,    None,  None, True),   # 仅下限：解析出 min，max 留空
+    ("5833元以上/月", "month", 5.833, None, None, True),
+    ("5万以下",       "month", None,  50,   None, True),   # 仅上限
+    ("8千以上",       "month", 8,    None,  None, True),
+])
+def test_salary_one_sided(raw, unit, lo, hi, months, ok):
+    s = parse_salary(raw)
+    assert (s.unit, s.min, s.max, s.months, s.ok) == (unit, lo, hi, months, ok)
+
 def test_experience():
     assert parse_experience("3-5年") == (3, 5)
     assert parse_experience("10年以上") == (10, None)

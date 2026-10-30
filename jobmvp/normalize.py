@@ -7,6 +7,8 @@ from typing import Optional
 # ---------- 薪资 ----------
 _UNIT = {"k": 1.0, "K": 1.0, "千": 1.0, "万": 10.0}   # 折算为 千元
 _RANGE = re.compile(r"(\d+(?:\.\d+)?)\s*(千|万|[kK])?\s*[-~～至到]\s*(\d+(?:\.\d+)?)\s*(千|万|[kK])?")
+_LOWER = re.compile(r"(\d+(?:\.\d+)?)\s*(千|万|[kK])?\s*元?\s*以[上内]")   # 仅下限，如 3000元以上
+_UPPER = re.compile(r"(\d+(?:\.\d+)?)\s*(千|万|[kK])?\s*元?\s*以[下]")       # 仅上限，如 5万以下
 _MONTHS = re.compile(r"[·.\s]\s*(\d{2})\s*薪")
 _DAY = re.compile(r"元?\s*/\s*(天|日)")
 _HOUR = re.compile(r"元?\s*/\s*(时|小时)")
@@ -29,6 +31,25 @@ def parse_salary(raw: Optional[str]) -> Salary:
         return Salary(reason="negotiable")
     m = _RANGE.search(s)
     if not m:
+        # 仅下限 / 仅上限：如 "3000元以上/月"、"5万以下" —— 也要结构化出 min/max
+        mo, mu = _LOWER.search(s), _UPPER.search(s)
+        if mo or mu:
+            src = mo or mu
+            n, u = float(src[1]), src[2]
+            factor = _UNIT.get(u, 0.001 if n >= 1000 else 1.0)
+            tail = s[src.end():]
+            if _DAY.search(tail):
+                unit = "day"
+            elif _HOUR.search(tail):
+                unit = "hour"
+            else:
+                unit = "month"
+            val = round(n * factor, 3)
+            mm = _MONTHS.search(tail)
+            months = int(mm[1]) if mm and 12 <= int(mm[1]) <= 16 else None
+            if mo:
+                return Salary(unit=unit, min=val, max=None, months=months, ok=True, reason="lower_only")
+            return Salary(unit=unit, min=None, max=val, months=months, ok=True, reason="upper_only")
         return Salary(reason="no_range")
     lo, lu, hi, hu = float(m[1]), m[2], float(m[3]), m[4]
     unit_tail = s[m.end():]

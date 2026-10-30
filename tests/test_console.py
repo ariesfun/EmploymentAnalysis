@@ -30,7 +30,7 @@ def test_trigger_run_and_views(client, conn):
     runs = client.get("/api/sources/fx/runs", headers=H).json()
     assert runs[0]["status"] == "success" and runs[0]["parsed"] == 2
     assert client.get("/api/quality", headers=H).json()[0]["total"] == 2
-    assert client.get("/api/metrics/new_jobs_daily", headers=H).json()["version"] == "v1.1"
+    assert client.get("/api/metrics/new_jobs_daily", headers=H).json()["version"] == "v1.2"
     assert client.get("/api/metrics/pg_user;drop", headers=H).status_code == 404
     conn.execute("UPDATE source_config SET enabled=false"); conn.commit()
     assert client.post("/api/sources/fx/run", headers=H).status_code == 409

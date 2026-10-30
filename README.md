@@ -75,7 +75,7 @@ JOBMVP_DSN=postgresql://mvp:mvp@127.0.0.1:5432/jobmvp JOBMVP_API_KEY=devkey \
 | `GET /api/sources/{id}/runs` | 运行历史 |
 | `GET /api/runs/{run_id}/errors` | 解析失败样本 |
 | `GET /api/quality` | 数据质量面板 |
-| `GET /api/jobs` | 岗位明细（`category` / `city` / `q` 过滤 + 分页），含源站详情链接 |
+| `GET /api/jobs` | 岗位明细（`category` / `city` / `q` 过滤，`sort=posted\|salary_desc\|salary_asc` 排序 + 分页）；**已业务去重**，含源站详情链接 |
 | `GET /api/unmapped` | 未映射岗位名队列（供人工归类） |
 | `GET /api/metrics/{name}` | 指标视图（白名单） |
 | `GET /api/audit` | 审计日志 |
@@ -185,17 +185,26 @@ DEFAULT_MOHRSS_KEYWORDS = [
 
 ---
 
-## 6. 指标口径（v1）
+## 6. 指标口径（v1.2）
+
+> **业务去重（v1.2 新增）**：源站会用多个 `job_id` 重复发布同一岗位（公司+岗位+城市+区+薪资相同）。
+> `source_job_id` 唯一约束挡不住这种重复。`sql/004_dedup.sql` 建了 `m_job_dedup` 视图，
+> 按业务键分组、每组保留 `posted_at` 最新的一条；看板列表与「活跃岗位」类指标均引用它。
+> `m_quality` / `m_new_jobs_daily` / `m_job_lifetime` 仍基于原始 `job`（质量诊断、入库量、生命周期口径）。
 
 | 视图 | 口径 |
 |---|---|
-| `m_new_jobs_daily` | 按 `first_seen::date` 计新发（不是 `posted_at`） |
-| `m_active_jobs` | `status='active'` 计数 |
+| `m_job_dedup` | **v1.2 新增**：按 `(title_raw, company_name, city, district, salary_raw)` 去重，保留 `posted_at` 最新（并列取 `first_seen`、`job_pk` 最大）；仅 `active` |
+| `m_new_jobs_daily` | 按 `first_seen::date` 计新发（不是 `posted_at`）；基于原始 `job` |
+| `m_active_jobs` | **基于 `m_job_dedup`** 计数（去重后活跃数） |
 | `m_job_lifetime` | 仅 `closed` 岗位；`closed_at - first_seen` 的 P50；`n≥30` |
-| `m_salary_pctl` | v1：`active AND salary_ok AND salary_unit='month'`；`(min+max)/2` 的 P25/P50/P75；按 **(岗类, 城市)** 分组，`n≥30` |
-| `m_salary_pctl_by_category` | **v1.1 新增**：同上但只按**岗类**分组，并排除 `category IS NULL`；小样本下才有可用分位数 |
-| `m_skill_weekly` | `unnest(skills)` 按周 × 岗类 × 技能 |
-| `m_quality` | 薪资解析率 / 地区匹配率 / 岗类映射率 / 技能命中率 |
+| `m_salary_pctl` | v1：`salary_ok AND salary_unit='month' AND min/max 均非空`；`(min+max)/2` 的 P25/P50/P75；按 **(岗类, 城市)** 分组，`n≥30` |
+| `m_salary_pctl_by_category` | v1.1 新增 / **v1.2 调整**：只按**岗类**分组并排除 `category IS NULL`；**最小样本 30 → 10**（垂直切口样本稀疏），前端标注「样本<20 谨慎参考」 |
+| `m_skill_weekly` | **基于 `m_job_dedup`** `unnest(skills)` 按周 × 岗类 × 技能 |
+| `m_quality` | 薪资解析率 / 地区匹配率 / 岗类映射率 / 技能命中率；基于原始 `job` |
+
+**薪资解析（v1.2 扩充）**：除双边界区间外，`X元以上/月`（仅下限）与 `X元以下`（仅上限）也结构化出 `min`/`max`；
+仅下限/仅上限不参与薪资分位（分位需 `min`、`max` 均有值），但会进入列表展示（如 `5K以上`）。
 
 ### 6.1 P25 / P50 / P75 怎么读
 

@@ -13,7 +13,7 @@ API_KEY = os.environ.get("JOBMVP_API_KEY", "")
 METRIC_VIEWS = {"new_jobs_daily": "m_new_jobs_daily", "active_jobs": "m_active_jobs", "salary_pctl": "m_salary_pctl",
                 "salary_by_category": "m_salary_pctl_by_category",
                 "job_lifetime": "m_job_lifetime", "skill_weekly": "m_skill_weekly"}   # 白名单，禁止拼接用户输入
-METRIC_VERSION = "v1.1"          # v1.1 新增 salary_by_category，v1 既有视图未改动
+METRIC_VERSION = "v1.2"          # v1.2：业务去重(m_job_dedup) + salary_by_category 最小样本放宽到 10
 
 app = FastAPI(title="jobmvp console")
 app.include_router(ui_router)                                  # 可视化首页 /ui
@@ -103,11 +103,12 @@ def metric(name: str, limit: int = 200, _=Depends(auth), conn=Depends(db)):
     return {"metric": name, "version": METRIC_VERSION, "rows": rows}
 
 @app.get("/api/jobs")
-def jobs(category: str = "", city: str = "", q: str = "",
+def jobs(category: str = "", city: str = "", q: str = "", sort: str = "posted",
          limit: int = 50, offset: int = 0, _=Depends(auth), conn=Depends(db)):
     """岗位明细（仅当前在招）。用于运营/用户直接跳转源站投递。
 
     只返回岗位侧字段：不含任何 HR 联系方式（那部分在采集阶段就被丢弃）。
+    已按业务键去重（m_job_dedup，每组保留最新发布）；sort 走白名单，禁止拼接用户输入。
     """
     where = ["status = 'active'"]
     args: list = []
@@ -121,13 +122,19 @@ def jobs(category: str = "", city: str = "", q: str = "",
         where.append("(title_raw ILIKE %s OR company_name ILIKE %s)")
         args += [f"%{q}%", f"%{q}%"]
     cond = " AND ".join(where)
+    order = {
+        "posted":      "posted_at DESC NULLS LAST, job_pk DESC",
+        "salary_desc": "salary_min DESC NULLS LAST, job_pk DESC",
+        "salary_asc":  "salary_min ASC NULLS LAST, job_pk DESC",
+    }.get(sort, "posted_at DESC NULLS LAST, job_pk DESC")
 
-    total = conn.execute(f"SELECT count(*) AS n FROM job WHERE {cond}", args).fetchone()["n"]
+    total = conn.execute(f"SELECT count(*) AS n FROM m_job_dedup WHERE {cond}", args).fetchone()["n"]
     rows = conn.execute(
         f"""SELECT job_pk, title_raw, company_name, city, district, salary_raw,
+                   salary_min, salary_max, salary_unit, salary_months,
                    salary_ok, category, posted_at, url
-            FROM job WHERE {cond}
-            ORDER BY posted_at DESC NULLS LAST, job_pk DESC
+            FROM m_job_dedup WHERE {cond}
+            ORDER BY {order}
             LIMIT %s OFFSET %s""",
         args + [min(limit, 200), max(offset, 0)],
     ).fetchall()

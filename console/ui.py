@@ -123,7 +123,7 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
       <b>P50</b> 是正中间那个（典型水平，一半岗位比它低、一半比它高）、
       <b>P75</b> 是排在第 3/4 位的（偏高的价）。
       也就是说 <b>P25～P75 之间，就是大多数公司开出的价</b>。
-      口径：只统计在招、且能解析出月薪数字的岗位，样本少于 30 条的岗类不展示。
+      口径（v1.2）：只统计在招、能解析出月薪区间（min/max 都有）的岗位；已按「岗位+公司+城市」业务去重，每组保留最新发布；样本少于 10 条的岗类不展示，<b>样本&lt;20 的谨慎参考</b>。
     </p>
     <div id="salary"></div>
   </div>
@@ -134,6 +134,11 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
     <div class="filters">
       <select id="fCat"><option value="">全部岗类</option></select>
       <select id="fCity"><option value="">全部城市</option></select>
+      <select id="fSort" onchange="loadJobs(0)">
+        <option value="posted">最新发布</option>
+        <option value="salary_desc">月薪高→低</option>
+        <option value="salary_asc">月薪低→高</option>
+      </select>
       <input id="fQ" placeholder="搜岗位名 / 公司名" onkeydown="if(event.key==='Enter')loadJobs(0)">
       <button onclick="loadJobs(0)">查询</button>
       <span class="sub" id="jobCount"></span>
@@ -165,7 +170,7 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
     <div id="audit"></div>
   </div>
 
-  <footer>jobmvp console · 指标口径 v1.1</footer>
+  <footer>jobmvp console · 指标口径 v1.2</footer>
 </div>
 
 <script>
@@ -266,27 +271,63 @@ function table(headers, rows, empty){
   return `<table><thead><tr>${th}</tr></thead><tbody>${tb}</tbody></table>`;
 }
 
+// 薪资统一显示为 K（库里的 salary_min/max 对 month 单位即为千元；对 day/hour 为元）
+function fmtSalary(r){
+  // 完全无法结构化：面议 / 空
+  if(!r.salary_ok || (r.salary_min == null && r.salary_max == null)){
+    if(r.salary_raw && r.salary_raw.indexOf('面议') >= 0) return '面议';
+    return esc(r.salary_raw || '-');
+  }
+  const k = v => {                              // 千元 -> 保留 1 位小数，去 .0
+    const n = Math.round(Number(v) * 10) / 10;
+    return String(n);
+  };
+  const isMonth = (r.salary_unit || 'month') === 'month';
+  if(!isMonth){                                 // 日薪 / 时薪：按「元」显示
+    const v = r.salary_min != null ? r.salary_min : r.salary_max;
+    let body = (r.salary_min != null && r.salary_max != null && r.salary_min !== r.salary_max)
+      ? `${r.salary_min}-${r.salary_max}元` : `${v}元`;
+    body += (r.salary_min != null && r.salary_max == null) ? '以上'
+          : (r.salary_max != null && r.salary_min == null) ? '以下' : '';
+    return esc(body);
+  }
+  let body;
+  if(r.salary_min != null && r.salary_max != null && r.salary_min !== r.salary_max){
+    body = `${k(r.salary_min)}-${k(r.salary_max)}K`;
+  } else if(r.salary_min != null && r.salary_max == null){
+    body = `${k(r.salary_min)}K以上`;
+  } else if(r.salary_max != null && r.salary_min == null){
+    body = `${k(r.salary_max)}K以下`;
+  } else {
+    body = `${k(r.salary_min != null ? r.salary_min : r.salary_max)}K`;
+  }
+  const months = r.salary_months && r.salary_months > 12 ? ` · ${r.salary_months}薪` : '';
+  return esc(body + months);
+}
+
 const JOB_PAGE = 20;
 let jobOffset = 0, jobTotal = 0;
 
 async function loadJobs(offset){
   jobOffset = Math.max(0, offset || 0);
   const p = new URLSearchParams({limit: JOB_PAGE, offset: jobOffset});
-  const cat = $('fCat').value, city = $('fCity').value, q = $('fQ').value.trim();
+  const cat = $('fCat').value, city = $('fCity').value,
+        q = $('fQ').value.trim(), sort = $('fSort').value;
   if(cat) p.set('category', cat);
   if(city) p.set('city', city);
   if(q) p.set('q', q);
+  if(sort) p.set('sort', sort);
   try{
     const d = await api('/api/jobs?' + p.toString());
     jobTotal = d.total;
     $('jobCount').textContent = `共 ${d.total} 条`;
     $('jobList').innerHTML = table(
-      [{label:'岗位'},{label:'公司'},{label:'城市'},{label:'薪资'},{label:'发布'},{label:'操作'}],
+      [{label:'岗位'},{label:'公司'},{label:'城市'},{label:'月薪'},{label:'发布'},{label:'操作'}],
       d.rows.map(r => [
         esc(r.title_raw),
         esc(r.company_name || '-'),
         esc([r.city, r.district].filter(Boolean).join('·') || '-'),
-        esc(r.salary_raw || '-'),
+        fmtSalary(r),
         esc((r.posted_at || '').slice(0, 10) || '-'),
         r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">查看详情 ↗</a>` : '-'
       ]),
@@ -318,7 +359,7 @@ async function main(){
     return;
   }
   try{
-    const [sources, quality, activeR, dailyR, salaryR, runs, unmapped, audit] = await Promise.all([
+    const [sources, quality, activeR, dailyR, salaryR, runs, unmapped, audit, jobsR] = await Promise.all([
       api('/api/sources'), api('/api/quality'),
       api('/api/metrics/active_jobs?limit=2000'),
       api('/api/metrics/new_jobs_daily?limit=2000'),
@@ -326,6 +367,7 @@ async function main(){
       api('/api/sources/mohrss/runs?limit=8'),
       api('/api/unmapped?limit=10'),
       api('/api/audit?limit=10'),
+      api('/api/jobs?limit=1'),
     ]);
 
     // 指标接口返回 {metric, version, rows}
@@ -337,10 +379,12 @@ async function main(){
     $('sub').innerHTML = `数据源 <b>${esc(src.name || '-')}</b>
       <span class="pill ${src.enabled?'ok':'bad'}">${src.enabled?'已启用':'已停用'}</span>
       <span class="pill">${esc(src.tier || '-')} 级</span>`;
-    $('meta').textContent = `样本 ${q.total ?? 0} 条 · 指标口径 v1.1`;
+    const dedupTotal = jobsR.total ?? 0;
+    $('meta').textContent =
+      `在招 ${dedupTotal} 条（原始采集 ${q.total ?? 0}，已去重）· 指标口径 v1.2`;
 
     $('kpis').innerHTML =
-      kpi('在招岗位', (q.total ?? 0).toLocaleString(), '条') +
+      kpi('在招岗位', dedupTotal.toLocaleString(), '条') +
       kpi('薪资可解析率', q.salary_parse_pct ?? '-', '%') +
       kpi('地区匹配率', q.region_match_pct ?? '-', '%') +
       kpi('岗类映射率', q.category_map_pct ?? '-', '%');
