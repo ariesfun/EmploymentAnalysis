@@ -140,7 +140,7 @@ def jobs(category: str = "", city: str = "", q: str = "", sort: str = "posted",
             LIMIT %s OFFSET %s""",
         args + [min(limit, 200), max(offset, 0)],
     ).fetchall()
-    return {"total": total, "limit": limit, "offset": offset, "rows": rows}
+    return {"total": total, "limit": min(limit, 200), "offset": offset, "rows": rows}
 
 
 @app.get("/api/analytics/skills")
@@ -256,13 +256,23 @@ def match_jobs(limit: int = 20, min_score: int = 0, _=Depends(auth), conn=Depend
     return {"rows": rows}
 
 
+_NET_CACHE = {"ts": 0.0, "ok": False}
+
+
 def _check_network() -> bool:
+    """探测外网可达性，结果缓存 60 秒，避免状态栏轮询每次都真发请求。"""
+    now = time.time()
+    if now - _NET_CACHE["ts"] < 60:
+        return _NET_CACHE["ok"]
+    ok = False
     try:
         import httpx
         r = httpx.get("https://www.zhipin.com", timeout=2.5, follow_redirects=True)
-        return r.status_code < 500
-    except Exception:
-        return False
+        ok = r.status_code < 500
+    except Exception:  # noqa: BLE001
+        ok = False
+    _NET_CACHE.update({"ts": now, "ok": ok})
+    return ok
 
 
 _BOSS_PROBE = {"ts": 0.0, "state": "unknown", "detail": "未探测"}
@@ -280,6 +290,8 @@ def _probe_boss_account() -> dict:
         return {"state": _BOSS_PROBE["state"], "detail": _BOSS_PROBE["detail"],
                 "checked_at": _BOSS_PROBE["ts"]}
 
+    # 先占位时间戳：并发请求看到 ts 已更新会直接吃缓存，不会重复启动 playwright
+    _BOSS_PROBE["ts"] = now
     state, detail = "bad", "Chrome 未启动"
     try:
         import httpx

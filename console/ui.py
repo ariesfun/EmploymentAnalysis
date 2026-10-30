@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 
 router = APIRouter()
 
-INDEX_HTML = """<!DOCTYPE html>
+INDEX_HTML = r"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">

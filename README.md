@@ -1,9 +1,13 @@
-# EmploymentAnalysis · 招聘市场数据 MVP
+# 招聘市场数据实时分析
 
-按 `docs/招聘市场实时数据分析与可视化产品方案.md` 与 `reference/jobmvp-参考实现/` 的约束实现的最小可用版本（M1 数据底座）。
+按 `docs/招聘市场实时数据分析与可视化产品方案.md` 与 `reference/jobmvp-参考实现/` 的约束实现，
+当前版本 **v0.1.0（内部）**。
 
-**当前状态**：链路已跑通 —— 真实 A 级数据源 → 原始层落盘 → 解析 → 标准化 → PostgreSQL → 指标视图 → 控制台 API。
-**尚未做**：前端看板、调度（cron/systemd）、多租户与权限。等 MVP 手册确认后再排期。
+**当前状态**：全链路已跑通 —— 真实数据源（mohrss A 级 + BOSS B 级）→ 原始层落盘 → 解析 → 标准化
+→ PostgreSQL → 指标视图 → 控制台 API → 可视化看板（5 模块 + 8 图表 + 底部状态栏）。
+
+**已具备**：多源采集（含 BOSS CDP 旁听 / 主动调 API）、业务去重、薪资分位、技能热度、业务领域、
+经验分布、岗位匹配度（求职意向）、采集配置、实时状态监控、定时任务（每小时）。
 
 ---
 
@@ -102,11 +106,16 @@ EmploymentAnalysis/
 │   ├── cli.py            run / reap（cron 入口）
 │   └── sources/
 │       └── mohrss.py     中国公共招聘网适配器（A 级）
-├── console/app.py        FastAPI 控制台
-├── sql/                  001 表结构 / 002 指标视图
+├── console/app.py        FastAPI 后端（20+ 接口：岗位/指标/分析/配置/状态）
+├── console/ui.py         看板前端（侧边栏 5 模块 + 8 图表 + 底部状态栏）
+├── sql/                  001 表结构 / 002-004 指标与去重 / 005 采集配置 / 006 求职意向
 ├── tools/seed_dicts.py   字典与源配置播种
 ├── tools/gen_regions.py  生成行政区划映射表（源站 aa12.json）
-├── tests/                52 个用例（需真实 PG）
+├── tools/boss_api_scrape.py   BOSS 主动调 API 采集（分页 30 条/页，--plan 读配置）
+├── tools/capture_boss_current.py  采集当前页面（人工切城市后用）
+├── tools/boss_cdp_smoke.py    CDP 连通性自检
+├── tools/start_boss_chrome.bat  启动 BOSS 专用 Chrome（9223 + 独立 profile）
+├── tests/                71 个用例（需真实 PG）
 ├── data/raw/             原始层：按 source/日期 落盘，可重放
 ├── docs/                 产品方案、参考项目调研、架构笔记
 └── reference/            三套参考工程（不入库）
@@ -200,6 +209,49 @@ python tools/import_boss.py path/to/jobs.json             # 写库
 - `tools/boss_cdp_smoke.py` 是 CDP 只读自检脚本（验证能否拿到明文 `salaryDesc`），
   需自行用独立 profile 启动 Chrome 并登录后运行。
 
+### 4.3 主动调 API 采集（`tools/boss_api_scrape.py`，推荐）
+
+在已登录页面上下文里直接调 `joblist.json`（复用 cookie），**30 条/页**，比旁听一页 15 条快一倍：
+
+```bash
+# 单次：关键词 × 城市 × 页数
+python tools/boss_api_scrape.py --keyword 开发 --city 101110100 --pages 3
+
+# 按看板「采集配置」里保存的计划批量跑（定时任务用的就是这个）
+python tools/boss_api_scrape.py --plan
+```
+
+- 用 `page.request.get()` 而非 `page.evaluate(fetch)` —— 后者遇 SPA 导航会 `Execution context destroyed`；
+- 翻页随机延迟 12-22 秒，单次上限 10 页（300 条）；
+- 城市码：北京 `101010100` / 上海 `101020100` / 成都 `101270100` / 重庆 `101040100` / 西安 `101110100`。
+
+### 4.4 看板功能与配置
+
+看板地址 `http://127.0.0.1:8010/ui?key=<JOBMVP_API_KEY>`，左侧可折叠菜单 5 个模块：
+
+| 模块 | 内容 |
+|---|---|
+| 概览 | KPI、数据质量、数据源、新发岗位趋势 |
+| 市场结构 | 岗类分布、城市分布、业务领域分布 |
+| 技能需求 | 技能热度 Top15、技能×岗类热力矩阵 |
+| 薪资分析 | 薪资分位、薪资分布直方图、经验要求分布 |
+| 岗位明细 | 在招岗位（筛选/搜索/分页）、运行历史、未映射、审计日志 |
+| 求职意向 | 期望城市/薪资/技能/岗类 → 岗位匹配度打分（0-100） |
+| 采集配置 | 关键词 + 城市 + 每组合页数，定时任务按此执行 |
+
+**底部状态栏**（30 秒轮询，缓存见括号）：
+
+| 项 | 含义 |
+|---|---|
+| 监控 | 采集计划是否启用 |
+| 最近采集 | 距今多久（来自 `max(last_seen)`） |
+| 运行 | 服务进程运行时长 |
+| 网络 | 外网可达性（60 秒缓存） |
+| 账号 | **BOSS 账号真实探测**：调一次 joblist 看 `code` 是否为 0（120 秒缓存） |
+| 数据源 | 已启用源数 / 总数 |
+
+账号状态三档：`ok` 正常 / `warn` 异常（`code=36` 需在浏览器完成验证、`code=37/401/403` 登录失效）/ `bad` Chrome 未启动。
+
 ---
 
 ## 5. 合规约束（不可绕过）
@@ -217,7 +269,7 @@ python tools/import_boss.py path/to/jobs.json             # 写库
 
 ---
 
-## 6. 指标口径（v1.2）
+## 6. 指标口径（v1.3）
 
 > **业务去重（v1.2 新增）**：源站会用多个 `job_id` 重复发布同一岗位（公司+岗位+城市+区+薪资相同）。
 > `source_job_id` 唯一约束挡不住这种重复。`sql/004_dedup.sql` 建了 `m_job_dedup` 视图，
