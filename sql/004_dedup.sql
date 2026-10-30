@@ -33,6 +33,11 @@ CREATE OR REPLACE VIEW m_active_jobs AS
 SELECT category, city, count(*) AS active_jobs
 FROM m_job_dedup GROUP BY 1,2;
 
+-- 每日新发趋势：去重后（避免同一岗位重复计入，384 -> 228）
+CREATE OR REPLACE VIEW m_new_jobs_daily AS
+SELECT date_trunc('day', first_seen)::date AS day, category, city, count(*) AS new_jobs
+FROM m_job_dedup GROUP BY 1,2,3;
+
 -- 薪资分位：去重 + 仅双边界参与（(min+max)/2 需要 min、max 都非空）
 CREATE OR REPLACE VIEW m_salary_pctl AS
 SELECT category, city, count(*) AS n,

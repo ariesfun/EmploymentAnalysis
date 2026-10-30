@@ -380,8 +380,7 @@ async function main(){
       <span class="pill ${src.enabled?'ok':'bad'}">${src.enabled?'已启用':'已停用'}</span>
       <span class="pill">${esc(src.tier || '-')} 级</span>`;
     const dedupTotal = jobsR.total ?? 0;
-    $('meta').textContent =
-      `在招 ${dedupTotal} 条（原始采集 ${q.total ?? 0}，已去重）· 指标口径 v1.2`;
+    $('meta').textContent = `在招 ${dedupTotal} 条（已去重）· 指标口径 v1.2`;
 
     $('kpis').innerHTML =
       kpi('在招岗位', dedupTotal.toLocaleString(), '条') +
