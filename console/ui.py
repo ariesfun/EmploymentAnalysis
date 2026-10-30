@@ -105,12 +105,12 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
   <div class="grid g2">
     <div class="card">
       <h2>岗类分布（在招）</h2>
-      <p class="hint">未映射岗位显示为「未映射」，进 unmapped_term 队列</p>
+      <p class="hint">未映射岗位显示为「未映射」，进 unmapped_term 队列<span class="asof"></span></p>
       <div id="families"></div>
     </div>
     <div class="card">
       <h2>城市分布（在招）</h2>
-      <p class="hint">按标准化后的地级市统计</p>
+      <p class="hint">按标准化后的地级市统计<span class="asof"></span></p>
       <div id="cities"></div>
     </div>
   </div>
@@ -118,12 +118,12 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
   <div class="grid g2">
     <div class="card">
       <h2>技能热度（Top 15）</h2>
-      <p class="hint">从岗位标题/描述提取的技能词频（去重后活跃岗位）</p>
+      <p class="hint">从岗位标题/描述提取的技能词频（去重后活跃岗位）<span class="asof"></span></p>
       <div id="skills"></div>
     </div>
     <div class="card">
       <h2>业务领域分布</h2>
-      <p class="hint">按公司名关键词粗分类（信息技术 / 财务金融 / 交通物流 / 电子芯片 等）</p>
+      <p class="hint">按公司名关键词粗分类（信息技术 / 财务金融 / 交通物流 / 电子芯片 等）<span class="asof"></span></p>
       <div id="domains"></div>
     </div>
   </div>
@@ -338,14 +338,16 @@ async function loadJobs(offset){
     jobTotal = d.total;
     $('jobCount').textContent = `共 ${d.total} 条`;
     $('jobList').innerHTML = table(
-      [{label:'岗位'},{label:'公司'},{label:'城市'},{label:'月薪'},{label:'来源'},{label:'发布'},{label:'操作'}],
+      [{label:'岗位'},{label:'公司'},{label:'城市'},{label:'月薪'},{label:'来源'},{label:'发布/采集'},{label:'操作'}],
       d.rows.map(r => [
         esc(r.title_raw),
         esc(r.company_name || '-'),
         esc([r.city, r.district].filter(Boolean).join('·') || '-'),
         fmtSalary(r),
         esc(SOURCE_NAME[r.source_id] || r.source_id || '-'),
-        esc((r.posted_at || '').slice(0, 10) || '-'),
+        r.posted_at
+          ? esc(String(r.posted_at).slice(0, 10))
+          : (r.first_seen ? `采集 ${esc(String(r.first_seen).slice(5, 16).replace('T', ' '))}` : '-'),
         r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">查看详情 ↗</a>` : '-'
       ]),
       '没有符合条件的岗位');
@@ -376,7 +378,7 @@ async function main(){
     return;
   }
   try{
-    const [sources, quality, activeR, dailyR, salaryR, runs, unmapped, audit, jobsR, skillsR, domainsR] = await Promise.all([
+    const [sources, quality, activeR, dailyR, salaryR, runs, unmapped, audit, jobsR, skillsR, domainsR, metaR] = await Promise.all([
       api('/api/sources'), api('/api/quality'),
       api('/api/metrics/active_jobs?limit=2000'),
       api('/api/metrics/new_jobs_daily?limit=2000'),
@@ -387,6 +389,7 @@ async function main(){
       api('/api/jobs?limit=1'),
       api('/api/analytics/skills?limit=15'),
       api('/api/analytics/domains'),
+      api('/api/analytics/meta'),
     ]);
 
     // 指标接口返回 {metric, version, rows}
@@ -399,7 +402,14 @@ async function main(){
       <span class="pill ${src.enabled?'ok':'bad'}">${src.enabled?'已启用':'已停用'}</span>
       <span class="pill">${esc(src.tier || '-')} 级</span>`;
     const dedupTotal = jobsR.total ?? 0;
-    $('meta').textContent = `在招 ${dedupTotal} 条（已去重）· 指标口径 v1.3`;
+    // 数据时效：最新采集时间
+    const asOf = metaR && metaR.data_as_of ? new Date(metaR.data_as_of) : null;
+    const pad2 = n => String(n).padStart(2, '0');
+    const asOfStr = asOf
+      ? `${asOf.getMonth() + 1}-${asOf.getDate()} ${pad2(asOf.getHours())}:${pad2(asOf.getMinutes())}`
+      : '-';
+    document.querySelectorAll('.asof').forEach(el => { el.textContent = `（截至 ${asOfStr}）`; });
+    $('meta').textContent = `在招 ${dedupTotal} 条（已去重）· 数据截至 ${asOfStr} · 指标口径 v1.3`;
 
     $('kpis').innerHTML =
       kpi('在招岗位', dedupTotal.toLocaleString(), '条') +

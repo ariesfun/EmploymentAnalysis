@@ -133,7 +133,7 @@ def jobs(category: str = "", city: str = "", q: str = "", sort: str = "posted",
     rows = conn.execute(
         f"""SELECT job_pk, source_id, title_raw, company_name, city, district, salary_raw,
                    salary_min, salary_max, salary_unit, salary_months,
-                   salary_ok, category, posted_at, url
+                   salary_ok, category, posted_at, first_seen, last_seen, url
             FROM m_job_dedup WHERE {cond}
             ORDER BY {order}
             LIMIT %s OFFSET %s""",
@@ -173,6 +173,18 @@ def analytics_domains(_=Depends(auth), conn=Depends(db)):
            FROM m_job_dedup GROUP BY 1 ORDER BY 2 DESC"""
     ).fetchall()
     return {"rows": rows}
+
+
+@app.get("/api/analytics/meta")
+def analytics_meta(_=Depends(auth), conn=Depends(db)):
+    """数据时效信息：最新采集时间、统计窗口起点、去重后条数。"""
+    r = conn.execute(
+        """SELECT max(last_seen) AS data_as_of,
+                  min(first_seen) AS window_start,
+                  count(*) AS total
+           FROM m_job_dedup"""
+    ).fetchone()
+    return r
 
 
 @app.get("/api/audit")
