@@ -12,10 +12,13 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 
 import psycopg
 
-from jobmvp.taxonomy import category_rows, skill_rows
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # 支持 python tools/xxx.py 直接运行
+
+from jobmvp.taxonomy import category_rows, skill_rows  # noqa: E402
 
 DEFAULT_DSN = os.environ.get("JOBMVP_DSN", "postgresql://mvp:mvp@localhost/jobmvp")
 

@@ -42,7 +42,8 @@ def main() -> int:
         json.dumps(mapping, ensure_ascii=False, indent=0, sort_keys=True),
         encoding="utf-8",
     )
-    print(f"✓ {OUT.relative_to(OUT.parents[2])}  {len(mapping)} 个地级市")
+    # 不要用 ✓ 这类符号：GBK(936) 控制台无法编码，会在写完文件后抛 UnicodeEncodeError。
+    print(f"[OK] {OUT.relative_to(OUT.parents[2])}  {len(mapping)} 个地级市")
     return 0
 
 
