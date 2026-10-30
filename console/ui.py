@@ -504,16 +504,16 @@ function kpi(label, value, unit){
 function hbar(items, color, fmt){
   if(!items.length) return '<div class="empty">暂无数据</div>';
   const max = Math.max(...items.map(i => i[1])) || 1;
-  const rowH = 24, w = 520, labelW = 96, valW = 70, pw = w - labelW - valW;
-  const h = items.length * rowH + 8;
-  let s = `<svg viewBox="0 0 ${w} ${h}" width="100%">`;
+  const rowH = 20, w = 520, labelW = 90, valW = 56, pw = w - labelW - valW;
+  const h = items.length * rowH + 6;
+  let s = `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:560px">`;
   items.forEach(([lab, val], i) => {
-    const y = 4 + i * rowH, bh = rowH - 10;
+    const bh = 7, cy = 3 + i * rowH + (rowH - bh) / 2;
     const bw = Math.max(pw * val / max, 2);
-    s += `<text x="${labelW-8}" y="${y+bh/2+4}" text-anchor="end" font-size="11" fill="#1f2328">${esc(lab)}</text>`;
-    s += `<rect x="${labelW}" y="${y}" width="${pw}" height="${bh}" rx="3" fill="#f2f4f7"/>`;
-    s += `<rect x="${labelW}" y="${y}" width="${bw.toFixed(1)}" height="${bh}" rx="3" fill="${color}" opacity="0.88"/>`;
-    s += `<text x="${w-4}" y="${y+bh/2+4}" text-anchor="end" font-size="11" fill="#6b7280">${esc(fmt?fmt(val):val)}</text>`;
+    s += `<text x="${labelW-8}" y="${cy+bh-2}" text-anchor="end" font-size="11" fill="#1f2328">${esc(lab)}</text>`;
+    s += `<rect x="${labelW}" y="${cy}" width="${pw}" height="${bh}" rx="3.5" fill="#f2f4f7"/>`;
+    s += `<rect x="${labelW}" y="${cy}" width="${bw.toFixed(1)}" height="${bh}" rx="3.5" fill="${color}" opacity="0.9"/>`;
+    s += `<text x="${w-4}" y="${cy+bh-2}" text-anchor="end" font-size="11" fill="#6b7280">${esc(fmt?fmt(val):val)}</text>`;
   });
   return s + '</svg>';
 }
