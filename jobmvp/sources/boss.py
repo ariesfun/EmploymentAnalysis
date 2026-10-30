@@ -127,6 +127,10 @@ class BossAdapter(HttpAdapter):
         不注入 XHR、不伪造指纹、不接代理池——只让真实浏览器自己发请求，我们旁听
         Network 响应。拿到接口层明文 salaryDesc（DOM 里是字体加密乱码）。
         需先手动启动 Chrome 并登录：--remote-debugging-port=9223。
+
+        注意：采集的是**当前页面所在城市**。BOSS 的城市由登录态/cookie 决定，
+        URL 的 city 参数会被服务端覆盖；城市选择弹窗在 CDP 自动化下不稳定
+        （打开即关闭、内容不加载），因此切换城市需人工在浏览器里操作。
         """
         from playwright.sync_api import sync_playwright
 
