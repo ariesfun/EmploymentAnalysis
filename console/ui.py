@@ -40,6 +40,11 @@ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft
 .collapse-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer;color:var(--muted);flex-shrink:0}
 .collapse-btn:hover{background:#f6f7f9;color:var(--ink)}
 .collapse-btn svg{width:18px;height:18px}
+.side-foot{padding:12px 14px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;white-space:nowrap}
+.side-foot .ver{font-weight:650;color:var(--ink);letter-spacing:.2px}
+.side-foot .tag{padding:1px 6px;border:1px solid var(--line);border-radius:4px;font-size:10px;background:#f8f9fb}
+.sidebar.collapsed .side-foot{justify-content:center;padding:12px 0}
+.sidebar.collapsed .side-foot .tag{display:none}
 .main{flex:1;min-width:0;padding:24px 24px 60px}
 header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
 flex-wrap:wrap;margin-bottom:18px}
@@ -145,6 +150,9 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
         <span class="label">采集配置</span>
       </button>
     </nav>
+    <div class="side-foot">
+      <span class="ver">v0.1.0</span><span class="tag">内部</span>
+    </div>
   </aside>
   <main class="main">
   <header>
@@ -195,7 +203,7 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
     <div class="card">
       <h2>业务领域分布</h2>
       <p class="hint">按公司名关键词粗分类（信息技术 / 财务金融 / 交通物流 / 电子芯片 等）<span class="asof"></span></p>
-      <div id="domains"></div>
+      <div id="domains" style="display:flex;justify-content:center"></div>
     </div>
   </section>
 
@@ -372,7 +380,7 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
     </div>
   </section>
 
-  <footer>招聘市场数据实时分析 · 指标口径 v1.3</footer>
+  <footer>招聘市场数据实时分析 v0.1.0 · 指标口径 v1.3</footer>
   </main>
 </div>
 
