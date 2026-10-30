@@ -25,21 +25,21 @@ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft
 .app{display:flex;min-height:100vh}
 .sidebar{width:216px;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;transition:width .18s ease;flex-shrink:0}
 .sidebar.collapsed{width:62px}
-.brand{display:flex;align-items:center;gap:10px;padding:16px 14px;border-bottom:1px solid var(--line);min-height:58px}
-.brand .logo{width:26px;height:26px;color:var(--accent);flex-shrink:0}
-.brand .logo svg{width:26px;height:26px}
-.brand-text{font-size:13px;font-weight:650;line-height:1.35;white-space:nowrap;overflow:hidden}
-.sidebar.collapsed .brand-text{display:none}
+.brand{display:flex;align-items:center;gap:8px;padding:12px 10px;border-bottom:1px solid var(--line);min-height:56px}
+.brand .logo{width:24px;height:24px;color:var(--accent);flex-shrink:0}
+.brand .logo svg{width:24px;height:24px}
+.brand-text{flex:1;font-size:13px;font-weight:650;line-height:1.3;white-space:nowrap;overflow:hidden}
+.sidebar.collapsed .brand{justify-content:center;padding:12px 0}
+.sidebar.collapsed .brand-text,.sidebar.collapsed .brand .logo{display:none}
 .menu{flex:1;padding:10px 8px;display:flex;flex-direction:column;gap:2px;overflow:hidden}
 .menu-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border:none;background:none;border-radius:8px;cursor:pointer;color:var(--muted);font-size:13px;font-family:inherit;text-align:left;white-space:nowrap;transition:background .12s}
 .menu-item:hover{background:#f6f7f9;color:var(--ink)}
 .menu-item.active{background:#eef3ff;color:var(--accent);font-weight:600}
 .menu-item svg{width:18px;height:18px;flex-shrink:0}
-.sidebar.collapsed .menu-item .label,.sidebar.collapsed .collapse-btn .label{display:none}
-.collapse-btn{display:flex;align-items:center;gap:10px;padding:10px 12px;border:none;background:none;border-top:1px solid var(--line);cursor:pointer;color:var(--muted);font-size:12px;font-family:inherit;white-space:nowrap}
-.collapse-btn:hover{color:var(--ink);background:#f6f7f9}
-.collapse-btn svg{width:16px;height:16px;transition:transform .18s}
-.sidebar.collapsed .collapse-btn svg{transform:rotate(180deg)}
+.sidebar.collapsed .menu-item .label{display:none}
+.collapse-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer;color:var(--muted);flex-shrink:0}
+.collapse-btn:hover{background:#f6f7f9;color:var(--ink)}
+.collapse-btn svg{width:18px;height:18px}
 .main{flex:1;min-width:0;padding:24px 24px 60px}
 header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
 flex-wrap:wrap;margin-bottom:18px}
@@ -99,6 +99,9 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       </span>
       <span class="brand-text">招聘市场数据<br>实时分析</span>
+      <button class="collapse-btn" id="collapseBtn" title="折叠/展开菜单">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
     </div>
     <nav class="menu" id="menu">
       <button class="menu-item active" data-mod="overview" title="概览">
@@ -122,10 +125,6 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
         <span class="label">岗位明细</span>
       </button>
     </nav>
-    <button class="collapse-btn" id="collapseBtn" title="折叠/展开菜单">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>
-      <span class="label">折叠菜单</span>
-    </button>
   </aside>
   <main class="main">
   <header>
