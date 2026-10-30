@@ -79,6 +79,19 @@ def test_parse_resolves_district_to_city():
     assert items[1]["region_code"] == "220105"
 
 
+def test_parse_resolves_city_from_region_code_alone():
+    """同页没有市级行时，也要能靠区划码前 4 位推出城市（regions.json）。"""
+    only_district = [{**_ROWS[1], "aab302": "雁塔区", "aab301": "610113"}]
+    items = _adapter().parse(_page(only_district))
+    assert items[0]["location_raw"] == "西安·雁塔区"
+
+
+def test_parse_municipality_district():
+    """直辖市的区县码（1101xx）也要归到「北京」。"""
+    rows = [{**_ROWS[0], "aab302": "海淀区", "aab301": "110108"}]
+    assert _adapter().parse(_page(rows))[0]["location_raw"] == "北京·海淀区"
+
+
 def test_parse_province_level_has_no_city():
     items = _adapter().parse(_page())
     assert items[2]["location_raw"] == ""                # 省级岗位不臆测城市

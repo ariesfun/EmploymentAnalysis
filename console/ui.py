@@ -103,8 +103,8 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
   </div>
 
   <div class="card">
-    <h2>薪资分位（P25 / P50 / P75）</h2>
-    <p class="hint">仅 status=active 且 salary_ok 且 salary_unit=month；分组样本 &lt; 30 不输出</p>
+    <h2>薪资分位（按岗类，P25 / P50 / P75）</h2>
+    <p class="hint">口径 v1.1：仅 status=active 且 salary_ok 且 salary_unit=month，排除未映射岗类；样本 &lt; 30 不输出</p>
     <div id="salary"></div>
   </div>
 
@@ -127,7 +127,7 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
     <div id="audit"></div>
   </div>
 
-  <footer>jobmvp console · 指标口径 v1</footer>
+  <footer>jobmvp console · 指标口径 v1.1</footer>
 </div>
 
 <script>
@@ -248,7 +248,7 @@ async function main(){
       api('/api/sources'), api('/api/quality'),
       api('/api/metrics/active_jobs?limit=2000'),
       api('/api/metrics/new_jobs_daily?limit=2000'),
-      api('/api/metrics/salary_pctl?limit=2000'),
+      api('/api/metrics/salary_by_category?limit=2000'),
       api('/api/sources/mohrss/runs?limit=8'),
       api('/api/unmapped?limit=10'),
       api('/api/audit?limit=10'),
@@ -263,7 +263,7 @@ async function main(){
     $('sub').innerHTML = `数据源 <b>${esc(src.name || '-')}</b>
       <span class="pill ${src.enabled?'ok':'bad'}">${src.enabled?'已启用':'已停用'}</span>
       <span class="pill">${esc(src.tier || '-')} 级</span>`;
-    $('meta').textContent = `样本 ${q.total ?? 0} 条 · 指标口径 v1`;
+    $('meta').textContent = `样本 ${q.total ?? 0} 条 · 指标口径 v1.1`;
 
     $('kpis').innerHTML =
       kpi('在招岗位', (q.total ?? 0).toLocaleString(), '条') +
@@ -312,12 +312,12 @@ async function main(){
     $('cities').innerHTML = hbar(sortDesc(city).slice(0, 10), '#12a594');
 
     $('salary').innerHTML = table(
-      [{label:'岗类'},{label:'城市'},{label:'样本',num:1},
+      [{label:'岗类'},{label:'样本',num:1},
        {label:'P25',num:1},{label:'P50',num:1},{label:'P75',num:1}],
-      salary.map(r => [esc(r.category || '未映射'), esc(r.city || '-'), r.n,
+      salary.map(r => [esc(r.category), r.n,
         Number(r.p25_k).toFixed(1) + 'K', Number(r.p50_k).toFixed(1) + 'K',
         Number(r.p75_k).toFixed(1) + 'K']),
-      '暂无可展示分组（分组样本需 ≥ 30）');
+      '暂无可展示岗类（样本需 ≥ 30）');
 
     $('runs').innerHTML = table(
       [{label:'开始时间'},{label:'状态'},{label:'抓取',num:1},{label:'解析',num:1},{label:'失败',num:1}],

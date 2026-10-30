@@ -15,8 +15,17 @@ from __future__ import annotations
 import html as html_lib
 import json
 import re
+from urllib.parse import urlencode
+
+from pathlib import Path
 
 from ..adapter import HttpAdapter, RawPage
+
+# 区划码前 4 位 -> 地级市（由 tools/gen_regions.py 生成）
+_PREFECTURE: dict[str, str] = json.loads(
+    (Path(__file__).resolve().parent.parent / "data" / "regions.json")
+    .read_text(encoding="utf-8")
+)
 
 _LIST_URL = "http://job.mohrss.gov.cn/cjobs/jobinfolist/listJobinfolist"
 _DETAIL_URL = "http://job.mohrss.gov.cn/cjobs/jobinfolist/cb21/showgw?id={job_id}"
@@ -62,18 +71,40 @@ class MohrssAdapter(HttpAdapter):
     captcha_markers: tuple[str, ...] = ("请完成安全验证", "访问验证")
 
     def __init__(self, client, base_url: str = "http://job.mohrss.gov.cn",
-                 keyword: str = ""):
+                 keyword: str = "", keywords: list[str] | None = None):
         super().__init__(client, base_url)
         self.keyword = keyword
+        # 多关键词轮转：一次运行内依次覆盖多个检索词，避免只抓单一方向
+        kws = [k.strip() for k in (keywords or []) if k and k.strip()]
+        if not kws and keyword.strip():
+            kws = [keyword.strip()]
+        self.keywords = kws
 
     # ------------------------------------------------------------ 发现
     def discover(self, max_pages: int):
-        for page_no in range(1, max(1, int(max_pages)) + 1):
-            params = {"pageNo": page_no, "pagecount": "", "orderType": "score", "s_acb241": "0"}
-            if self.keyword:
-                params["textfield"] = self.keyword
-            qs = "&".join(f"{k}={v}" for k, v in params.items())
-            yield f"{_LIST_URL}?{qs}"
+        """按关键词轮转产出列表页 URL。
+
+        源站的 textfield 检索会匹配岗位描述，相关性一般，但能显著提高目标岗类的密度；
+        不传关键词时退回全站顺序（样本会偏向少数发布机构）。
+        """
+        total = max(1, int(max_pages))
+        if not self.keywords:
+            for page_no in range(1, total + 1):
+                yield self._list_url("", page_no)
+            return
+        n = len(self.keywords)
+        for i in range(total):
+            kw = self.keywords[i % n]
+            page_no = i // n + 1
+            yield self._list_url(kw, page_no)
+
+    @staticmethod
+    def _list_url(keyword: str, page_no: int) -> str:
+        # 必须走 urlencode：中文关键词不编码会被服务端忽略，返回一堆无关岗位
+        params = {"pageNo": page_no, "pagecount": "", "orderType": "score", "s_acb241": "0"}
+        if keyword:
+            params["textfield"] = keyword
+        return f"{_LIST_URL}?{urlencode(params)}"
 
     # ------------------------------------------------------------ 解析
     def parse(self, page: RawPage):
@@ -122,17 +153,21 @@ class MohrssAdapter(HttpAdapter):
             else:
                 salary_raw = "面议"
 
-            # 地区：只用 aab302（岗位工作地）+ aab301（区划码），
-            # 不使用 acb202（那是单位注册地址，常与工作地不符）
+            # 地区：区划码优先（跨页有效），源站地区名兜底。
+            # 不使用 acb202（单位注册地址，常与工作地不符）。
             kind, val = area_kind(r.get("aab302"))
             code = str(r.get("aab301") or "")
             city, district = "", ""
+
+            if len(code) >= 4 and not code.endswith("0000"):   # 非省级码
+                city = _norm_city(_PREFECTURE.get(code[:4], ""))
+
             if kind == "city":
-                city = val
+                city = city or val
             elif kind == "district":
                 district = val
-                city = code2city.get(code[:4], "")
-            else:
+
+            if not city and code:                              # 同页兜底
                 city = code2city.get(code[:4], "")
 
             if city and district:

@@ -97,12 +97,14 @@ EmploymentAnalysis/
 │   ├── store.py          入库、生命周期、审计、僵尸运行回收
 │   ├── registry.py       source_id → 适配器工厂
 │   ├── taxonomy.py       出厂词表（岗类规则 / 技能别名）
+│   ├── data/regions.json 区划码前4位 → 地级市（tools/gen_regions.py 生成）
 │   ├── cli.py            run / reap（cron 入口）
 │   └── sources/
 │       └── mohrss.py     中国公共招聘网适配器（A 级）
 ├── console/app.py        FastAPI 控制台
 ├── sql/                  001 表结构 / 002 指标视图
 ├── tools/seed_dicts.py   字典与源配置播种
+├── tools/gen_regions.py  生成行政区划映射表（源站 aa12.json）
 ├── tests/                52 个用例（需真实 PG）
 ├── data/raw/             原始层：按 source/日期 落盘，可重放
 ├── docs/                 产品方案、参考项目调研、架构笔记
@@ -115,7 +117,7 @@ EmploymentAnalysis/
 
 | source_id | 名称 | 等级 | 状态 | 说明 |
 |---|---|---|---|---|
-| `mohrss` | 中国公共招聘网 | **A** | 已接入，运行中 | 人社部公共就业平台公开列表页；无登录、无验证码；约 17 万条岗位 |
+| `mohrss` | 中国公共招聘网 | **A** | 已接入，运行中 | 人社部公共就业平台公开列表页；无登录、无验证码；约 17 万条岗位；**默认按技术关键词轮转采集** |
 | `boss` | BOSS直聘 | **B** | 已接入，**默认关闭** | 代码与解析器就位，但受 robots 与风控限制，当前拿不到数据（见下） |
 
 采集口径：
@@ -126,6 +128,23 @@ EmploymentAnalysis/
   区县级岗位用同页学到的「区划码前 4 位 → 城市」归并。
 - PII：源站列表含 `aae004`（联系人）/`aae005`（电话）/`aae013`（邮箱），
   适配器**根本不读取**这些键，加上 `sanitize()` 的 `PII_FIELDS` 双保险。
+
+### 4.0 技术岗切口（默认策略）
+
+产品首个垂直切口是「计算机 / IT 开发岗」，而该站全站顺序里技术岗只占 2~3%。
+适配器默认按一组技术检索词**轮转**抓取（`discover()` 里 `i % len(keywords)`），
+一次运行覆盖 12 个方向，技术岗占比提升到约 50%：
+
+```python
+DEFAULT_MOHRSS_KEYWORDS = [
+    "Java", "Python", "前端", "后端", "测试", "运维",
+    "算法", "网络", "系统", "软件工程师", "数据开发", "嵌入式",
+]
+```
+
+- 覆盖方式：`MOHRSS_KEYWORDS="Java,Go"`（逗号分隔）或 `tools/seed_dicts.py` 里改默认值；
+- 检索词匹配的是**岗位描述**，相关性有限，仍需靠岗类字典二次归类；
+- 注意 `discover()` 必须走 `urlencode` —— 中文关键词不编码会被服务端忽略，返回一堆无关岗位（曾踩过）。
 
 ### 4.1 BOSS 直聘（B 级）现状
 
@@ -169,7 +188,8 @@ EmploymentAnalysis/
 | `m_new_jobs_daily` | 按 `first_seen::date` 计新发（不是 `posted_at`） |
 | `m_active_jobs` | `status='active'` 计数 |
 | `m_job_lifetime` | 仅 `closed` 岗位；`closed_at - first_seen` 的 P50；`n≥30` |
-| `m_salary_pctl` | `active AND salary_ok AND salary_unit='month'`；`(min+max)/2` 的 P25/P50/P75；`n≥30` |
+| `m_salary_pctl` | v1：`active AND salary_ok AND salary_unit='month'`；`(min+max)/2` 的 P25/P50/P75；按 **(岗类, 城市)** 分组，`n≥30` |
+| `m_salary_pctl_by_category` | **v1.1 新增**：同上但只按**岗类**分组，并排除 `category IS NULL`；小样本下才有可用分位数 |
 | `m_skill_weekly` | `unnest(skills)` 按周 × 岗类 × 技能 |
 | `m_quality` | 薪资解析率 / 地区匹配率 / 岗类映射率 / 技能命中率 |
 
@@ -177,15 +197,24 @@ EmploymentAnalysis/
 
 ---
 
-## 7. 首次实测结果（mohrss，20 页 / 400 条）
+## 7. 实测结果（mohrss，60 页 / 1096 条，去重 911）
 
-| 指标 | 值 | 说明 |
+| 指标 | 全站顺序 | 技术关键词轮转 |
 |---|---|---|
-| 解析成功 | 400 / 400 | `parse_failed=0` |
-| 薪资可解析率 | 88.3% | 其余为「面议」或仅给下限 |
-| 地区匹配率 | 100% | 用源站自带区划码 |
-| 岗类映射率 | 69.3% | 未映射进 `unmapped_term` 队列 |
-| 技能命中率 | 7.3% | 该源岗位描述普遍很短（"有经验者优先"） |
+| 样本 | 400 | 911 |
+| 技术岗占比 | 2~3% | **49.7%**（453 条） |
+| 薪资可解析率 | 88.3% | 83.4% |
+| 地区匹配率 | 100% | 100% |
+| 岗类映射率 | 69.3% | **83.0%** |
+| 技能命中率 | 7.3% | **46.3%** |
+
+岗类 Top：后端开发 184 / 未映射 155 / 销售·市场 121 / 职能 78 / 嵌入式·硬件 72 / 测试 60 / 算法·AI 55。
+
+薪资分位（按岗类，n≥30）：后端 P50 9.5K（n=155）、嵌入式 11.0K（n=65）、
+算法·AI 14.8K（n=44）、测试 5.0K（n=55）、运维 7.5K（n=34）。
+
+城市 Top：台州 100 / 西安 87 / 昆明 51 / 北京 41 / 无锡 38 / 合肥 34 / 苏州 30；
+另有 192 条源站只给省级码（如「江苏省」），按口径留空不臆测。
 
 已知偏差：
 - 默认排序（`orderType=score`）按发布机构聚集，单次 20 页里 西安 200 / 东台 137，

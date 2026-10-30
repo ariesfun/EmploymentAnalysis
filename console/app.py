@@ -11,8 +11,9 @@ from .ui import router as ui_router
 DSN = os.environ.get("JOBMVP_DSN", "postgresql://mvp:mvp@localhost/jobmvp")
 API_KEY = os.environ.get("JOBMVP_API_KEY", "")
 METRIC_VIEWS = {"new_jobs_daily": "m_new_jobs_daily", "active_jobs": "m_active_jobs", "salary_pctl": "m_salary_pctl",
+                "salary_by_category": "m_salary_pctl_by_category",
                 "job_lifetime": "m_job_lifetime", "skill_weekly": "m_skill_weekly"}   # 白名单，禁止拼接用户输入
-METRIC_VERSION = "v1"
+METRIC_VERSION = "v1.1"          # v1.1 新增 salary_by_category，v1 既有视图未改动
 
 app = FastAPI(title="jobmvp console")
 app.include_router(ui_router)                                  # 可视化首页 /ui
