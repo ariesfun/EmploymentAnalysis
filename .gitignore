@@ -15,6 +15,9 @@ data/*.db-wal
 data/*.db-shm
 output/
 
+# 开发期 UI 截图（零引用、仅调试留档，不入库；本地文件保留）
+data/*.png
+
 # 本地归档（SQLite 原型，已弃用）
 _attic/
 
