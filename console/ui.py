@@ -23,7 +23,7 @@ INDEX_HTML = """<!DOCTYPE html>
 body{margin:0;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.6;
 font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
 .app{display:flex;min-height:100vh}
-.sidebar{width:216px;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;transition:width .18s ease;flex-shrink:0}
+.sidebar{width:216px;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:calc(100vh - 30px);transition:width .18s ease;flex-shrink:0}
 .sidebar.collapsed{width:62px}
 .brand{display:flex;align-items:center;gap:8px;padding:12px 10px;border-bottom:1px solid var(--line);min-height:56px}
 .brand .logo{width:28px;height:28px;flex-shrink:0;display:flex}
