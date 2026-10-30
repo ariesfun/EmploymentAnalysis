@@ -15,7 +15,7 @@ INDEX_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>招聘市场数据控制台</title>
+<title>招聘市场数据实时分析</title>
 <style>
 :root{--ink:#1f2328;--muted:#6b7280;--line:#e6e8ec;--bg:#f6f7f9;--card:#fff;
 --accent:#2f6feb;--ok:#0f9d58;--warn:#d97706;--bad:#d92d20}
@@ -50,6 +50,13 @@ border:1px solid var(--line);background:#f8f9fb;color:var(--muted)}
 .bar{height:7px;background:#eef1f5;border-radius:999px;overflow:hidden;margin-top:5px}
 .bar>i{display:block;height:100%;background:var(--accent);border-radius:999px}
 .empty{color:#9aa1ab;font-size:12.5px;padding:10px 0}
+.tabs{display:flex;gap:2px;margin:14px 0 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tab{padding:8px 15px;border:none;background:none;font-size:13.5px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:inherit}
+.tab:hover{color:var(--ink)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.mod{display:none}
+.mod.active{display:block}
+
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
 .filters select,.filters input{padding:5px 9px;border:1px solid #d5d9e0;border-radius:8px;
 font-size:12.5px;background:#fff;color:var(--ink)}
@@ -74,135 +81,151 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
 <div class="wrap">
   <header>
     <div>
-      <h1>招聘市场数据控制台</h1>
+      <h1>招聘市场数据实时分析</h1>
       <div class="sub" id="sub">加载中…</div>
     </div>
     <div class="sub" id="meta"></div>
   </header>
   <div id="banner"></div>
 
-  <div class="grid g4" id="kpis"></div>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-mod="overview">概览</button>
+    <button class="tab" data-mod="market">市场结构</button>
+    <button class="tab" data-mod="skills">技能需求</button>
+    <button class="tab" data-mod="salary">薪资分析</button>
+    <button class="tab" data-mod="jobs">岗位明细</button>
+  </nav>
 
-  <div class="grid g2">
-    <div class="card">
-      <h2>数据质量</h2>
-      <p class="hint">口径见 m_quality 视图</p>
-      <div id="quality"></div>
-    </div>
-    <div class="card">
-      <h2>数据源</h2>
-      <p class="hint">合规闸门：未启用的源不发请求</p>
-      <div id="sources"></div>
-    </div>
-  </div>
+  <section class="mod active" data-mod="overview">
+    <div class="grid g4" id="kpis"></div>
 
-  <div class="card">
-    <h2>新发岗位趋势</h2>
-    <p class="hint">按 first_seen 归集到日（不是源站发布时间）</p>
-    <div id="trend"></div>
-  </div>
-
-  <div class="grid g2">
-    <div class="card">
-      <h2>岗类分布（在招）</h2>
-      <p class="hint">未映射岗位显示为「未映射」，进 unmapped_term 队列<span class="asof"></span></p>
-      <div id="families"></div>
+    <div class="grid g2">
+      <div class="card">
+        <h2>数据质量</h2>
+        <p class="hint">口径见 m_quality 视图</p>
+        <div id="quality"></div>
+      </div>
+      <div class="card">
+        <h2>数据源</h2>
+        <p class="hint">合规闸门：未启用的源不发请求</p>
+        <div id="sources"></div>
+      </div>
     </div>
-    <div class="card">
-      <h2>城市分布（在招）</h2>
-      <p class="hint">按标准化后的地级市统计<span class="asof"></span></p>
-      <div id="cities"></div>
-    </div>
-  </div>
 
-  <div class="grid g2">
     <div class="card">
-      <h2>技能热度（Top 15）</h2>
-      <p class="hint">从岗位标题/描述提取的技能词频（去重后活跃岗位）<span class="asof"></span></p>
-      <div id="skills"></div>
+      <h2>新发岗位趋势</h2>
+      <p class="hint">按 first_seen 归集到日（不是源站发布时间）</p>
+      <div id="trend"></div>
+    </div>
+  </section>
+
+  <section class="mod" data-mod="market">
+    <div class="grid g2">
+      <div class="card">
+        <h2>岗类分布（在招）</h2>
+        <p class="hint">未映射岗位显示为「未映射」，进 unmapped_term 队列<span class="asof"></span></p>
+        <div id="families"></div>
+      </div>
+      <div class="card">
+        <h2>城市分布（在招）</h2>
+        <p class="hint">按标准化后的地级市统计<span class="asof"></span></p>
+        <div id="cities"></div>
+      </div>
     </div>
     <div class="card">
       <h2>业务领域分布</h2>
       <p class="hint">按公司名关键词粗分类（信息技术 / 财务金融 / 交通物流 / 电子芯片 等）<span class="asof"></span></p>
       <div id="domains"></div>
     </div>
-  </div>
+  </section>
 
-  <div class="grid g2">
+  <section class="mod" data-mod="skills">
+    <div class="grid g2">
+      <div class="card">
+        <h2>技能热度（Top 15）</h2>
+        <p class="hint">从岗位标题/描述提取的技能词频（去重后活跃岗位）<span class="asof"></span></p>
+        <div id="skills"></div>
+      </div>
+      <div class="card">
+        <h2>技能 × 岗类矩阵</h2>
+        <p class="hint">Top 技能在各岗类的出现次数（颜色越深越密集）<span class="asof"></span></p>
+        <div id="skillMatrix"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="mod" data-mod="salary">
     <div class="card">
-      <h2>薪资分布直方图</h2>
-      <p class="hint">月薪区间（K）的岗位数量分布<span class="asof"></span></p>
-      <div id="salaryHist"></div>
+      <h2>薪资分位（按岗类，P25 / P50 / P75）</h2>
+      <p class="hint">
+        把该岗类所有岗位的月薪<b>从低到高排成一队</b>：
+        <b>P25</b> 是排在第 1/4 位的（偏低的价）、
+        <b>P50</b> 是正中间那个（典型水平，一半岗位比它低、一半比它高）、
+        <b>P75</b> 是排在第 3/4 位的（偏高的价）。
+        也就是说 <b>P25～P75 之间，就是大多数公司开出的价</b>。
+        口径（v1.3）：只统计在招、能解析出月薪区间（min/max 都有）的岗位；已按「岗位+公司+城市」业务去重，每组保留最新发布；样本少于 10 条的岗类不展示，<b>样本&lt;20 的谨慎参考</b>。
+      </p>
+      <div id="salary"></div>
     </div>
+    <div class="grid g2">
+      <div class="card">
+        <h2>薪资分布直方图</h2>
+        <p class="hint">月薪区间（K）的岗位数量分布<span class="asof"></span></p>
+        <div id="salaryHist"></div>
+      </div>
+      <div class="card">
+        <h2>经验要求分布</h2>
+        <p class="hint">按岗位要求的最低经验分档<span class="asof"></span></p>
+        <div id="expDist"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="mod" data-mod="jobs">
     <div class="card">
-      <h2>经验要求分布</h2>
-      <p class="hint">按岗位要求的最低经验分档<span class="asof"></span></p>
-      <div id="expDist"></div>
+      <h2>在招岗位（可直接投递）</h2>
+      <p class="hint">点「查看详情」跳到源站岗位页，可在原站投递；这里只有岗位侧字段，不含 HR 联系方式</p>
+      <div class="filters">
+        <select id="fCat"><option value="">全部岗类</option></select>
+        <select id="fCity"><option value="">全部城市</option></select>
+        <select id="fSort" onchange="loadJobs(0)">
+          <option value="posted">最新发布</option>
+          <option value="salary_desc">月薪高→低</option>
+          <option value="salary_asc">月薪低→高</option>
+        </select>
+        <input id="fQ" placeholder="搜岗位名 / 公司名" onkeydown="if(event.key==='Enter')loadJobs(0)">
+        <button onclick="loadJobs(0)">查询</button>
+        <span class="sub" id="jobCount"></span>
+      </div>
+      <div id="jobList"></div>
+      <div class="pager">
+        <button id="prevBtn" onclick="pageJobs(-1)">上一页</button>
+        <span id="pageInfo"></span>
+        <button id="nextBtn" onclick="pageJobs(1)">下一页</button>
+      </div>
     </div>
-  </div>
 
-  <div class="card">
-    <h2>技能 × 岗类矩阵</h2>
-    <p class="hint">Top 技能在各岗类的出现次数（颜色越深越密集）<span class="asof"></span></p>
-    <div id="skillMatrix"></div>
-  </div>
-
-  <div class="card">
-    <h2>薪资分位（按岗类，P25 / P50 / P75）</h2>
-    <p class="hint">
-      把该岗类所有岗位的月薪<b>从低到高排成一队</b>：
-      <b>P25</b> 是排在第 1/4 位的（偏低的价）、
-      <b>P50</b> 是正中间那个（典型水平，一半岗位比它低、一半比它高）、
-      <b>P75</b> 是排在第 3/4 位的（偏高的价）。
-      也就是说 <b>P25～P75 之间，就是大多数公司开出的价</b>。
-      口径（v1.2）：只统计在招、能解析出月薪区间（min/max 都有）的岗位；已按「岗位+公司+城市」业务去重，每组保留最新发布；样本少于 10 条的岗类不展示，<b>样本&lt;20 的谨慎参考</b>。
-    </p>
-    <div id="salary"></div>
-  </div>
-
-  <div class="card">
-    <h2>在招岗位（可直接投递）</h2>
-    <p class="hint">点「查看详情」跳到源站岗位页，可在原站投递；这里只有岗位侧字段，不含 HR 联系方式</p>
-    <div class="filters">
-      <select id="fCat"><option value="">全部岗类</option></select>
-      <select id="fCity"><option value="">全部城市</option></select>
-      <select id="fSort" onchange="loadJobs(0)">
-        <option value="posted">最新发布</option>
-        <option value="salary_desc">月薪高→低</option>
-        <option value="salary_asc">月薪低→高</option>
-      </select>
-      <input id="fQ" placeholder="搜岗位名 / 公司名" onkeydown="if(event.key==='Enter')loadJobs(0)">
-      <button onclick="loadJobs(0)">查询</button>
-      <span class="sub" id="jobCount"></span>
+    <div class="grid g2">
+      <div class="card">
+        <h2>运行历史</h2>
+        <p class="hint">run_log</p>
+        <div id="runs"></div>
+      </div>
+      <div class="card">
+        <h2>未映射岗位名（待归类）</h2>
+        <p class="hint">按出现次数排序，供人工补 dict_category</p>
+        <div id="unmapped"></div>
+      </div>
     </div>
-    <div id="jobList"></div>
-    <div class="pager">
-      <button id="prevBtn" onclick="pageJobs(-1)">上一页</button>
-      <span id="pageInfo"></span>
-      <button id="nextBtn" onclick="pageJobs(1)">下一页</button>
-    </div>
-  </div>
 
-  <div class="grid g2">
     <div class="card">
-      <h2>运行历史</h2>
-      <p class="hint">run_log</p>
-      <div id="runs"></div>
+      <h2>审计日志</h2>
+      <p class="hint">源启停、运行开始、验证码中断等全部留痕</p>
+      <div id="audit"></div>
     </div>
-    <div class="card">
-      <h2>未映射岗位名（待归类）</h2>
-      <p class="hint">按出现次数排序，供人工补 dict_category</p>
-      <div id="unmapped"></div>
-    </div>
-  </div>
+  </section>
 
-  <div class="card">
-    <h2>审计日志</h2>
-    <p class="hint">源启停、运行开始、验证码中断等全部留痕</p>
-    <div id="audit"></div>
-  </div>
-
-  <footer>jobmvp console · 指标口径 v1.3</footer>
+  <footer>招聘市场数据实时分析 · 指标口径 v1.3</footer>
 </div>
 
 <script>
@@ -210,6 +233,14 @@ const KEY = new URLSearchParams(location.search).get('key') || '';
 const $ = id => document.getElementById(id);
 
 function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// 模块 tab 切换
+document.getElementById('tabs')?.addEventListener('click', e => {
+  const btn = e.target.closest('.tab');
+  if(!btn) return;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === btn));
+  document.querySelectorAll('.mod').forEach(m => m.classList.toggle('active', m.dataset.mod === btn.dataset.mod));
+});
 
 async function api(path){
   const r = await fetch(path, {headers:{'X-API-Key': KEY}});
