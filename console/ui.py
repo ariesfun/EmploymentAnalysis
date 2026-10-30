@@ -45,7 +45,14 @@ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft
 .side-foot .tag{padding:1px 6px;border:1px solid var(--line);border-radius:4px;font-size:10px;background:#f8f9fb}
 .sidebar.collapsed .side-foot{justify-content:center;padding:12px 0}
 .sidebar.collapsed .side-foot .tag{display:none}
-.main{flex:1;min-width:0;padding:24px 24px 60px}
+.main{flex:1;min-width:0;padding:24px 24px 48px}
+.statusbar{position:fixed;left:0;right:0;bottom:0;height:30px;background:#fff;border-top:1px solid var(--line);
+display:flex;align-items:center;gap:18px;padding:0 16px;font-size:11.5px;color:var(--muted);z-index:100;overflow-x:auto}
+.statusbar .st{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.statusbar .dot{width:7px;height:7px;border-radius:50%;background:#9aa1ab;flex-shrink:0}
+.statusbar .dot.ok{background:#22a06b}
+.statusbar .dot.bad{background:#e5484d}
+.statusbar .dot.warn{background:#f5a623}
 header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
 flex-wrap:wrap;margin-bottom:18px}
 h1{font-size:20px;margin:0;font-weight:650;letter-spacing:-.2px}
@@ -380,9 +387,10 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
     </div>
   </section>
 
-  <footer>招聘市场数据实时分析 v0.1.0 · 指标口径 v1.3</footer>
   </main>
 </div>
+
+<div class="statusbar" id="statusbar"><div class="st">状态加载中…</div></div>
 
 <script>
 const KEY = new URLSearchParams(location.search).get('key') || '';
@@ -397,6 +405,32 @@ document.getElementById('menu')?.addEventListener('click', e => {
   document.querySelectorAll('.menu-item').forEach(t => t.classList.toggle('active', t === btn));
   document.querySelectorAll('.mod').forEach(m => m.classList.toggle('active', m.dataset.mod === btn.dataset.mod));
 });
+// 底部状态栏（30 秒轮询）
+async function loadStatus(){
+  try{
+    const d = await api('/api/status');
+    const last = d.last_scrape_at ? new Date(d.last_scrape_at) : null;
+    const mins = last ? Math.round((Date.now() - last.getTime()) / 60000) : null;
+    const agoStr = mins == null ? '—' : mins < 1 ? '刚刚'
+                 : mins < 60 ? `${mins} 分钟前` : `${Math.floor(mins / 60)} 小时前`;
+    const up = d.uptime_seconds || 0;
+    const upStr = up >= 3600 ? `${Math.floor(up / 3600)}h ${Math.floor(up % 3600 / 60)}m`
+                             : `${Math.floor(up / 60)}m ${up % 60}s`;
+    const srcs = d.sources || [];
+    const enabled = srcs.filter(x => x.enabled).length;
+    $('statusbar').innerHTML =
+      `<div class="st"><i class="dot ${d.monitor ? 'ok' : 'bad'}"></i>监控 ${d.monitor ? '运行中' : '已停止'}</div>` +
+      `<div class="st">最近采集 ${agoStr}</div>` +
+      `<div class="st">运行 ${upStr}</div>` +
+      `<div class="st"><i class="dot ${d.network_ok ? 'ok' : 'bad'}"></i>网络 ${d.network_ok ? '在线' : '离线'}</div>` +
+      `<div class="st"><i class="dot ${d.boss_cdp_ok ? 'ok' : 'warn'}"></i>账号 ${d.boss_cdp_ok ? '就绪' : 'Chrome未启动'}</div>` +
+      `<div class="st">数据源 ${enabled}/${srcs.length}</div>`;
+  }catch(e){
+    $('statusbar').innerHTML = '<div class="st"><i class="dot bad"></i>状态获取失败</div>';
+  }
+}
+setInterval(loadStatus, 30000);
+
 // 求职意向
 const CAT_OPTIONS = ["后端开发","前端开发","测试","算法/AI","数据","运维/SRE","嵌入式/硬件","网络安全","移动开发"];
 async function loadPref(){
@@ -756,7 +790,7 @@ async function main(){
       ? `${asOf.getMonth() + 1}-${asOf.getDate()} ${pad2(asOf.getHours())}:${pad2(asOf.getMinutes())}`
       : '-';
     document.querySelectorAll('.asof').forEach(el => { el.textContent = `（截至 ${asOfStr}）`; });
-    $('meta').textContent = `在招 ${dedupTotal} 条（已去重）· 数据截至 ${asOfStr} · 指标口径 v1.3`;
+    $('meta').textContent = `在招 ${dedupTotal} 条（已去重）· 数据截至 ${asOfStr}`;
 
     $('kpis').innerHTML =
       kpi('在招岗位', dedupTotal.toLocaleString(), '条') +
@@ -850,6 +884,7 @@ async function main(){
     loadJobs(0);
     loadPlan();
     loadPref();
+    loadStatus();
     loadMatch();
 
     $('audit').innerHTML = table(

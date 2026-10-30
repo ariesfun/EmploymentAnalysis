@@ -1,6 +1,6 @@
 """控制台后端（MVP P0）：源管理 / 运行 / 错误样本 / 数据质量 / 指标预览 / 审计。"""
 from __future__ import annotations
-import hmac, json, os
+import hmac, json, os, time
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from jobmvp import store
@@ -8,6 +8,7 @@ from jobmvp.registry import REGISTRY                     # 与 CLI 共用同一�
 from jobmvp.runner import SourceDisabled, run_source
 from .ui import router as ui_router
 
+START_TIME = time.time()          # 进程启动时间，用于计算运行时长
 DSN = os.environ.get("JOBMVP_DSN", "postgresql://mvp:mvp@localhost/jobmvp")
 API_KEY = os.environ.get("JOBMVP_API_KEY", "")
 METRIC_VIEWS = {"new_jobs_daily": "m_new_jobs_daily", "active_jobs": "m_active_jobs", "salary_pctl": "m_salary_pctl",
@@ -253,6 +254,41 @@ def match_jobs(limit: int = 20, min_score: int = 0, _=Depends(auth), conn=Depend
         (min_score, min(limit, 100)),
     ).fetchall()
     return {"rows": rows}
+
+
+def _check_network() -> bool:
+    try:
+        import httpx
+        r = httpx.get("https://www.zhipin.com", timeout=2.5, follow_redirects=True)
+        return r.status_code < 500
+    except Exception:
+        return False
+
+
+def _check_boss_cdp() -> bool:
+    """BOSS 账号功能是否就绪：Chrome 9223 可达即视为可用（登录态需人工确认）。"""
+    try:
+        import httpx
+        r = httpx.get("http://127.0.0.1:9223/json/version", timeout=2)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+@app.get("/api/status")
+def get_status(_=Depends(auth), conn=Depends(db)):
+    """底部状态栏：监控/采集/运行时长/网络/账号/数据源。"""
+    last = conn.execute("SELECT max(last_seen) AS t FROM job").fetchone()["t"]
+    plan = conn.execute("SELECT enabled FROM scrape_plan WHERE source_id='boss'").fetchone()
+    srcs = conn.execute("SELECT source_id, enabled FROM source_config ORDER BY source_id").fetchall()
+    return {
+        "monitor": bool(plan and plan["enabled"]),
+        "last_scrape_at": last,
+        "uptime_seconds": int(time.time() - START_TIME),
+        "network_ok": _check_network(),
+        "boss_cdp_ok": _check_boss_cdp(),
+        "sources": [{"source_id": x["source_id"], "enabled": x["enabled"]} for x in srcs],
+    }
 
 
 @app.get("/api/analytics/salary_hist")
