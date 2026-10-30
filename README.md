@@ -61,6 +61,10 @@ JOBMVP_DSN=postgresql://mvp:mvp@127.0.0.1:5432/jobmvp JOBMVP_API_KEY=devkey \
   .venv/Scripts/python.exe -m uvicorn console.app:app --host 127.0.0.1 --port 8010
 ```
 
+打开 **http://127.0.0.1:8010/ui?key=devkey** 即可视化首页（KPI / 数据质量 / 趋势 /
+岗类与城市分布 / 薪资分位 / 运行历史 / 未映射队列 / 审计日志，右上角可一键触发采集）。
+页面本身不含数据，所有数据都通过带 `X-API-Key` 的接口取。
+
 控制台接口（均需 `X-API-Key`，未配置 `JOBMVP_API_KEY` 时一律 401）：
 
 | 接口 | 用途 |
@@ -74,6 +78,11 @@ JOBMVP_DSN=postgresql://mvp:mvp@127.0.0.1:5432/jobmvp JOBMVP_API_KEY=devkey \
 | `GET /api/unmapped` | 未映射岗位名队列（供人工归类） |
 | `GET /api/metrics/{name}` | 指标视图（白名单） |
 | `GET /api/audit` | 审计日志 |
+
+> **僵尸运行**：服务被强杀会留下 `status='running'` 的记录，并因
+> `one_running_per_source` 唯一索引阻塞该源后续运行。执行
+> `python -m jobmvp.cli reap` 回收（默认只回收 6 小时前的；
+> 调试时可 `store.reap_stale_runs(conn, 0)`）。
 
 ---
 

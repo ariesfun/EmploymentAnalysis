@@ -1,21 +1,21 @@
 """控制台后端（MVP P0）：源管理 / 运行 / 错误样本 / 数据质量 / 指标预览 / 审计。"""
 from __future__ import annotations
 import hmac, os
-from typing import Callable
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from jobmvp import store
-from jobmvp.adapter import SourceAdapter
+from jobmvp.registry import REGISTRY                     # 与 CLI 共用同一份适配器注册表
 from jobmvp.runner import SourceDisabled, run_source
+from .ui import router as ui_router
 
 DSN = os.environ.get("JOBMVP_DSN", "postgresql://mvp:mvp@localhost/jobmvp")
 API_KEY = os.environ.get("JOBMVP_API_KEY", "")
-REGISTRY: dict[str, Callable[[], SourceAdapter]] = {}          # source_id -> adapter 工厂，由部署侧注册
 METRIC_VIEWS = {"new_jobs_daily": "m_new_jobs_daily", "active_jobs": "m_active_jobs", "salary_pctl": "m_salary_pctl",
                 "job_lifetime": "m_job_lifetime", "skill_weekly": "m_skill_weekly"}   # 白名单，禁止拼接用户输入
 METRIC_VERSION = "v1"
 
 app = FastAPI(title="jobmvp console")
+app.include_router(ui_router)                                  # 可视化首页 /ui
 
 def auth(x_api_key: str = Header(default="")):
     if not API_KEY or not hmac.compare_digest(x_api_key, API_KEY):   # 未配置 KEY 时一律拒绝，避免裸奔上线
