@@ -168,6 +168,23 @@ DEFAULT_MOHRSS_KEYWORDS = [
 
 启用前置条件（缺一不可）：法务书面意见 → 写入 `approval_note` → 评估 browser 模式的稳定性与频率。
 
+### 4.2 外部数据导入（推荐路径）
+
+BOSS 的 robots 禁止自动化采集，直接抓取不可行。若你已有合法数据（例如在**自己的登录态**下
+用第三方工具低频导出、或商务授权导出），用导入器并入本项目，复用全部标准化与指标链路：
+
+```bash
+python tools/import_boss.py path/to/jobs.json --dry-run   # 先预览映射，不写库
+python tools/import_boss.py path/to/jobs.json             # 写库
+```
+
+- 支持数组、`{jobList:[...]}`、`{zpData:{jobList:[...]}}` 三种 JSON 结构；
+- 字段宽松映射（`jobName`/`salaryDesc`/`brandName`/`cityName`/`areaDistrict`/`jobExperience`/`jobDegree`）；
+- **不采 HR 个人信息**：映射层不取 `bossName`/`bossTitle`/`bossAvatar`，白名单 + `sanitize` 再兜底；
+- 入库后走 `normalize` + `upsert`，去重、薪资 K、指标、看板自动生效；
+- `tools/boss_cdp_smoke.py` 是 CDP 只读自检脚本（验证能否拿到明文 `salaryDesc`），
+  需自行用独立 profile 启动 Chrome 并登录后运行。
+
 ---
 
 ## 5. 合规约束（不可绕过）

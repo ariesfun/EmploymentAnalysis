@@ -1,0 +1,11 @@
+{
+  "code": 0,
+  "message": "Success",
+  "zpData": {
+    "jobList": [
+      {"encryptJobId": "test001", "jobName": "Java开发工程师", "salaryDesc": "20-40K·15薪", "brandName": "西安某科技", "cityName": "西安", "areaDistrict": "雁塔区", "jobExperience": "3-5年", "jobDegree": "本科", "bossName": "张三", "bossTitle": "HR"},
+      {"encryptJobId": "test002", "jobName": "前端开发工程师", "salaryDesc": "15-25K", "brandName": "成都某网络", "cityName": "成都", "areaDistrict": "高新区", "jobExperience": "1-3年", "jobDegree": "大专", "bossName": "李四"},
+      {"encryptJobId": "test003", "jobName": "算法工程师", "salaryDesc": "30-50K·14薪", "brandName": "北京某AI", "cityName": "北京", "areaDistrict": "海淀区", "jobExperience": "5-10年", "jobDegree": "硕士"}
+    ]
+  }
+}
