@@ -102,6 +102,8 @@ def ingest(jobs: list[dict]) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="BOSS 主动调 API 采集")
+    ap.add_argument("--plan", action="store_true",
+                    help="从 scrape_plan 表读取关键词/城市/页数（看板「采集配置」保存的）")
     ap.add_argument("--keyword", default="开发")
     ap.add_argument("--city", default="101110100", help="BOSS 城市码，西安=101110100")
     ap.add_argument("--pages", type=int, default=3)
@@ -111,38 +113,54 @@ def main() -> int:
     ap.add_argument("--max-delay", type=float, default=22)
     args = ap.parse_args()
 
-    pages = max(1, min(args.pages, MAX_PAGES))
+    # 生成采集组合（关键词 × 城市 × 页）
+    if args.plan:
+        conn = store.connect(DSN)
+        plan = conn.execute("SELECT * FROM scrape_plan WHERE source_id='boss'").fetchone()
+        conn.close()
+        if not plan or not plan["enabled"]:
+            print("采集计划未启用或无配置，退出")
+            return 1
+        keywords = list(plan["keywords"] or [])
+        cities = list(plan["cities"] or [])
+        pages = max(1, min(int(plan["pages_per_combo"] or 2), MAX_PAGES))
+        combos = [(kw, c["code"], c["name"]) for kw in keywords for c in cities]
+        print(f"采集计划：{len(keywords)} 词 × {len(cities)} 城 × {pages} 页 "
+              f"= {len(combos) * pages} 页请求")
+    else:
+        combos = [(args.keyword, args.city, args.city)]
+        pages = max(1, min(args.pages, MAX_PAGES))
+
     total = 0
     with sync_playwright() as p:
         b = p.chromium.connect_over_cdp(CDP)
         page = b.contexts[0].pages[0]
-        # API 只需 zhipin.com 的 cookie，不必在搜索页；先导航到首页稳定上下文，
-        # 避免搜索页 SPA 导航导致 "Execution context was destroyed"
         try:
             page.goto("https://www.zhipin.com/", wait_until="domcontentloaded", timeout=30_000)
             page.wait_for_timeout(3_000)
         except Exception as e:  # noqa: BLE001
             print("导航首页失败（继续尝试）:", type(e).__name__, str(e)[:60])
-        for pn in range(1, pages + 1):
-            print(f"\n=== 第 {pn} 页（keyword={args.keyword} city={args.city}）===")
-            try:
-                data = fetch_page(page, args.keyword, args.city, pn, args.page_size)
-            except Exception as e:  # noqa: BLE001
-                print("  请求失败:", type(e).__name__, str(e)[:90])
-                break
-            code = data.get("code")
-            jobs = (data.get("zpData") or {}).get("jobList") or []
-            print(f"  code={code} 岗位数={len(jobs)}")
-            if not jobs:
-                print("  无更多数据，停止")
-                break
-            if not args.no_ingest:
-                print("  入库:", ingest(jobs))
-            total += len(jobs)
-            if pn < pages:
-                delay = random.uniform(args.min_delay, args.max_delay)
-                print(f"  随机延迟 {delay:.1f}s ...")
-                time.sleep(delay)
+
+        for kw, city_code, city_name in combos:
+            for pn in range(1, pages + 1):
+                print(f"\n=== {city_name} / {kw} 第 {pn} 页 ===")
+                try:
+                    data = fetch_page(page, kw, city_code, pn, args.page_size)
+                except Exception as e:  # noqa: BLE001
+                    print("  请求失败:", type(e).__name__, str(e)[:90])
+                    break
+                jobs = (data.get("zpData") or {}).get("jobList") or []
+                print(f"  code={data.get('code')} 岗位数={len(jobs)}")
+                if not jobs:
+                    print("  无更多数据")
+                    break
+                if not args.no_ingest:
+                    print("  入库:", ingest(jobs))
+                total += len(jobs)
+                if pn < pages:
+                    delay = random.uniform(args.min_delay, args.max_delay)
+                    print(f"  随机延迟 {delay:.1f}s ...")
+                    time.sleep(delay)
     print(f"\n完成，共 {total} 条")
     return 0
 

@@ -1,6 +1,6 @@
 """控制台后端（MVP P0）：源管理 / 运行 / 错误样本 / 数据质量 / 指标预览 / 审计。"""
 from __future__ import annotations
-import hmac, os
+import hmac, json, os
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from jobmvp import store
@@ -185,6 +185,36 @@ def analytics_meta(_=Depends(auth), conn=Depends(db)):
            FROM m_job_dedup"""
     ).fetchone()
     return r
+
+
+@app.get("/api/scrape_plan")
+def get_scrape_plan(source_id: str = "boss", _=Depends(auth), conn=Depends(db)):
+    """读取采集计划（关键词 / 城市 / 每组合页数）。"""
+    r = conn.execute("SELECT * FROM scrape_plan WHERE source_id=%s", (source_id,)).fetchone()
+    return r or {"source_id": source_id, "keywords": [], "cities": [],
+                 "pages_per_combo": 2, "enabled": False}
+
+
+@app.put("/api/scrape_plan")
+def put_scrape_plan(body: dict, _=Depends(auth), conn=Depends(db)):
+    """保存采集计划。"""
+    source_id = body.get("source_id") or "boss"
+    keywords = [str(k).strip() for k in (body.get("keywords") or []) if str(k).strip()]
+    cities = body.get("cities") or []
+    pages = max(1, min(int(body.get("pages_per_combo") or 2), 10))
+    enabled = bool(body.get("enabled", True))
+    conn.execute(
+        """INSERT INTO scrape_plan(source_id, keywords, cities, pages_per_combo, enabled, updated_at)
+           VALUES (%s,%s,%s::jsonb,%s,%s,now())
+           ON CONFLICT (source_id) DO UPDATE SET
+             keywords=EXCLUDED.keywords, cities=EXCLUDED.cities,
+             pages_per_combo=EXCLUDED.pages_per_combo,
+             enabled=EXCLUDED.enabled, updated_at=now()""",
+        (source_id, keywords, json.dumps(cities, ensure_ascii=False), pages, enabled),
+    )
+    conn.commit()
+    return {"ok": True, "source_id": source_id, "keywords": keywords, "cities": cities,
+            "pages_per_combo": pages, "enabled": enabled}
 
 
 @app.get("/api/analytics/salary_hist")

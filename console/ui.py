@@ -124,6 +124,10 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
         <span class="label">岗位明细</span>
       </button>
+      <button class="menu-item" data-mod="config" title="采集配置">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="label">采集配置</span>
+      </button>
     </nav>
   </aside>
   <main class="main">
@@ -265,6 +269,39 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
     </div>
   </section>
 
+  <section class="mod" data-mod="config">
+    <div class="card">
+      <h2>采集配置</h2>
+      <p class="hint">配置采集的<b>关键词</b>和<b>城市</b>，定时任务按此执行（每组合 30 条/页）</p>
+
+      <div style="margin-bottom:16px">
+        <label style="font-size:12.5px;color:var(--muted)">关键词（逗号分隔）</label>
+        <input id="planKeywords" placeholder="开发, C++, 前端, 测试, 算法"
+          style="width:100%;margin-top:5px;padding:8px 11px;border:1px solid #d5d9e0;border-radius:8px;font-size:13px;font-family:inherit">
+      </div>
+
+      <div style="margin-bottom:16px">
+        <label style="font-size:12.5px;color:var(--muted)">城市（多选）</label>
+        <div id="planCities" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:7px"></div>
+      </div>
+
+      <div style="margin-bottom:18px">
+        <label style="font-size:12.5px;color:var(--muted)">每个组合抓几页（30 条/页）</label>
+        <input id="planPages" type="number" min="1" max="10" value="2"
+          style="width:80px;margin-left:10px;padding:6px 9px;border:1px solid #d5d9e0;border-radius:6px;font-size:13px">
+      </div>
+
+      <div style="display:flex;gap:12px;align-items:center">
+        <button onclick="savePlan()"
+          style="padding:8px 20px;border:none;background:var(--accent);color:#fff;border-radius:8px;cursor:pointer;font-size:13px;font-family:inherit">保存配置</button>
+        <span id="planMsg" class="sub"></span>
+      </div>
+      <p class="hint" style="margin-top:14px">
+        定时任务（每小时）会读取此配置执行采集。前提：Chrome 9223 常驻且已登录 BOSS。
+      </p>
+    </div>
+  </section>
+
   <footer>招聘市场数据实时分析 · 指标口径 v1.3</footer>
   </main>
 </div>
@@ -282,6 +319,41 @@ document.getElementById('menu')?.addEventListener('click', e => {
   document.querySelectorAll('.menu-item').forEach(t => t.classList.toggle('active', t === btn));
   document.querySelectorAll('.mod').forEach(m => m.classList.toggle('active', m.dataset.mod === btn.dataset.mod));
 });
+// 采集配置
+const CITY_OPTIONS = [
+  {code:"101110100", name:"西安"}, {code:"101270100", name:"成都"},
+  {code:"101040100", name:"重庆"}, {code:"101010100", name:"北京"},
+  {code:"101020100", name:"上海"}, {code:"101280100", name:"广州"},
+  {code:"101280600", name:"深圳"}, {code:"101210100", name:"杭州"},
+];
+async function loadPlan(){
+  try{
+    const d = await api('/api/scrape_plan');
+    $('planKeywords').value = (d.keywords || []).join(', ');
+    $('planPages').value = d.pages_per_combo || 2;
+    const selected = new Set((d.cities || []).map(c => c.code));
+    $('planCities').innerHTML = CITY_OPTIONS.map(c =>
+      `<label style="display:flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;cursor:pointer;font-size:12.5px">
+        <input type="checkbox" value="${c.code}" data-name="${c.name}" ${selected.has(c.code)?'checked':''}> ${c.name}
+      </label>`).join('');
+  }catch(e){ console.warn('loadPlan', e); }
+}
+async function savePlan(){
+  const keywords = $('planKeywords').value.split(/[,，\s]+/).map(x=>x.trim()).filter(Boolean);
+  const cities = [...$('planCities').querySelectorAll('input:checked')].map(el => ({code: el.value, name: el.dataset.name}));
+  const pages = parseInt($('planPages').value) || 2;
+  try{
+    const r = await fetch('/api/scrape_plan', {
+      method: 'PUT',
+      headers: {'X-API-Key': KEY, 'Content-Type': 'application/json'},
+      body: JSON.stringify({source_id:'boss', keywords, cities, pages_per_combo: pages, enabled: true}),
+    });
+    const d = await r.json();
+    $('planMsg').textContent = d.ok ? `已保存（${keywords.length} 词 × ${cities.length} 城）` : '保存失败';
+  }catch(e){ $('planMsg').textContent = '保存失败: ' + e.message; }
+  setTimeout(() => { $('planMsg').textContent = ''; }, 3000);
+}
+
 // 折叠/展开侧边栏
 document.getElementById('collapseBtn')?.addEventListener('click', () => {
   document.getElementById('sidebar')?.classList.toggle('collapsed');
@@ -639,6 +711,7 @@ async function main(){
       sortDesc(city).map(([k]) => k).filter(k => k !== '未知')
         .map(k => `<option>${esc(k)}</option>`).join('');
     loadJobs(0);
+    loadPlan();
 
     $('audit').innerHTML = table(
       [{label:'时间'},{label:'动作'},{label:'对象'},{label:'操作者'}],
