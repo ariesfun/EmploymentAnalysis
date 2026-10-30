@@ -115,6 +115,19 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
     </div>
   </div>
 
+  <div class="grid g2">
+    <div class="card">
+      <h2>技能热度（Top 15）</h2>
+      <p class="hint">从岗位标题/描述提取的技能词频（去重后活跃岗位）</p>
+      <div id="skills"></div>
+    </div>
+    <div class="card">
+      <h2>业务领域分布</h2>
+      <p class="hint">按公司名关键词粗分类（信息技术 / 财务金融 / 交通物流 / 电子芯片 等）</p>
+      <div id="domains"></div>
+    </div>
+  </div>
+
   <div class="card">
     <h2>薪资分位（按岗类，P25 / P50 / P75）</h2>
     <p class="hint">
@@ -363,7 +376,7 @@ async function main(){
     return;
   }
   try{
-    const [sources, quality, activeR, dailyR, salaryR, runs, unmapped, audit, jobsR] = await Promise.all([
+    const [sources, quality, activeR, dailyR, salaryR, runs, unmapped, audit, jobsR, skillsR, domainsR] = await Promise.all([
       api('/api/sources'), api('/api/quality'),
       api('/api/metrics/active_jobs?limit=2000'),
       api('/api/metrics/new_jobs_daily?limit=2000'),
@@ -372,6 +385,8 @@ async function main(){
       api('/api/unmapped?limit=10'),
       api('/api/audit?limit=10'),
       api('/api/jobs?limit=1'),
+      api('/api/analytics/skills?limit=15'),
+      api('/api/analytics/domains'),
     ]);
 
     // 指标接口返回 {metric, version, rows}
@@ -430,6 +445,11 @@ async function main(){
     });
     const sortDesc = o => Object.entries(o).sort((a, b) => b[1] - a[1]);
     $('families').innerHTML = hbar(sortDesc(fam).slice(0, 10), '#2f6feb');
+
+    const skills = (skillsR.rows || []).map(r => [r.skill, r.n]);
+    $('skills').innerHTML = hbar(skills, '#7c3aed');
+    const domains = (domainsR.rows || []).map(r => [r.domain, r.n]);
+    $('domains').innerHTML = hbar(domains, '#0891b2');
     $('cities').innerHTML = hbar(sortDesc(city).slice(0, 10), '#12a594');
 
     $('salary').innerHTML = table(

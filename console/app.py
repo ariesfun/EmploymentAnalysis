@@ -142,6 +142,39 @@ def jobs(category: str = "", city: str = "", q: str = "", sort: str = "posted",
     return {"total": total, "limit": limit, "offset": offset, "rows": rows}
 
 
+@app.get("/api/analytics/skills")
+def analytics_skills(limit: int = 15, _=Depends(auth), conn=Depends(db)):
+    """技能热度 Top N（去重后活跃岗位，unnest skills）。"""
+    rows = conn.execute(
+        """SELECT s AS skill, count(*) AS n
+           FROM m_job_dedup, unnest(skills) AS s
+           GROUP BY 1 ORDER BY 2 DESC LIMIT %s""",
+        (min(limit, 50),),
+    ).fetchall()
+    return {"rows": rows}
+
+
+@app.get("/api/analytics/domains")
+def analytics_domains(_=Depends(auth), conn=Depends(db)):
+    """业务领域分布（从公司名关键词粗分类，去重后活跃岗位）。"""
+    rows = conn.execute(
+        """SELECT CASE
+                 WHEN company_name ~ '科技|信息|软件|网络|智能|数据' THEN '信息技术'
+                 WHEN company_name ~ '财务|会计|税务|金融' THEN '财务金融'
+                 WHEN company_name ~ '轨道|交通|运输|物流|供应链' THEN '交通物流'
+                 WHEN company_name ~ '安全' THEN '安全'
+                 WHEN company_name ~ '芯|半导体|电子' THEN '电子芯片'
+                 WHEN company_name ~ '医疗|医药|生物' THEN '医疗健康'
+                 WHEN company_name ~ '教育|培训|学校' THEN '教育培训'
+                 WHEN company_name ~ '制造|机械|设备|工业' THEN '制造工业'
+                 WHEN company_name ~ '贸易|商贸' THEN '商贸'
+                 ELSE '其他' END AS domain,
+               count(*) AS n
+           FROM m_job_dedup GROUP BY 1 ORDER BY 2 DESC"""
+    ).fetchall()
+    return {"rows": rows}
+
+
 @app.get("/api/audit")
 def audit_list(limit: int = 100, _=Depends(auth), conn=Depends(db)):
     return conn.execute("SELECT at,actor,action,target,detail FROM audit_log ORDER BY id DESC LIMIT %s", (min(limit, 500),)).fetchall()
