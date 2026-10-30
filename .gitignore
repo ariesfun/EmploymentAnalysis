@@ -24,3 +24,6 @@ reference/
 # 本地配置
 .env
 *.local
+
+# WorkBuddy 项目运行时数据（automations / memory 等，不入库）
+.workbuddy-ai/
