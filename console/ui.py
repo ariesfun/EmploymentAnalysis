@@ -390,6 +390,20 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
         定时任务（每小时）会读取此配置执行采集。前提：Chrome 9223 常驻且已登录 BOSS。
       </p>
     </div>
+
+    <div class="card">
+      <h2>采集日志</h2>
+      <p class="hint">每一步（关键词 × 城市 × 页）的返回码、条数、耗时、异常<span class="asof"></span></p>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px;font-size:12.5px">
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="checkbox" id="logOnlyErr" onchange="loadScrapeLogs()"> 只看异常
+        </label>
+        <span id="logSummary" class="sub"></span>
+        <button onclick="loadScrapeLogs()"
+          style="margin-left:auto;padding:4px 12px;border:1px solid #d5d9e0;background:#fff;border-radius:6px;cursor:pointer;font-size:12px">刷新</button>
+      </div>
+      <div id="scrapeLogs"></div>
+    </div>
   </section>
 
   </main>
@@ -453,6 +467,35 @@ $('statusRefresh')?.addEventListener('click', () => loadStatus(true));
 setInterval(loadStatus, 10000);
 setInterval(tickAgo, 1000);
 document.addEventListener('visibilitychange', () => { if(!document.hidden) loadStatus(); });
+
+// 采集日志
+async function loadScrapeLogs(){
+  const only = $('logOnlyErr').checked ? 1 : 0;
+  try{
+    const d = await api(`/api/scrape_logs?limit=30&only_error=${only}`);
+    const rows = d.rows || [];
+    const s24 = d.summary_24h || {};
+    $('logSummary').textContent =
+      `近 24h：${s24.total ?? 0} 步，异常 ${s24.errors ?? 0}，空页 ${s24.empties ?? 0}，均耗时 ${s24.avg_ms ?? '-'}ms`;
+    if(!rows.length){ $('scrapeLogs').innerHTML = '<div class="empty">暂无日志（跑一次采集后出现）</div>'; return; }
+    $('scrapeLogs').innerHTML = table(
+      [{label:'时间'},{label:'关键词'},{label:'城市'},{label:'页'},{label:'条数'},{label:'code'},{label:'耗时'},{label:'状态'},{label:'异常'}],
+      rows.map(r => [
+        esc(String(r.created_at || '').slice(5, 16).replace('T', ' ')),
+        esc(r.keyword || '-'),
+        esc(r.city_name || '-'),
+        r.page ?? '-',
+        r.job_count ?? 0,
+        r.code ?? '-',
+        r.elapsed_ms != null ? `${r.elapsed_ms}ms` : '-',
+        `<span class="pill ${r.status === 'ok' ? 'ok' : r.status === 'error' ? 'bad' : 'warn'}">${esc(r.status)}</span>`,
+        esc(r.error || '-')
+      ]),
+      '暂无日志');
+  }catch(e){
+    $('scrapeLogs').innerHTML = `<div class="empty">加载失败：${esc(e.message)}</div>`;
+  }
+}
 
 // 求职意向
 const CAT_OPTIONS = ["后端开发","前端开发","测试","算法/AI","数据","运维/SRE","嵌入式/硬件","网络安全","移动开发"];
@@ -906,6 +949,7 @@ async function main(){
         .map(k => `<option>${esc(k)}</option>`).join('');
     loadJobs(0);
     loadPlan();
+    loadScrapeLogs();
     loadPref();
     loadStatus();
     loadMatch();

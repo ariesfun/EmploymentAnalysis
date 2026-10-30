@@ -47,6 +47,12 @@ DSN = os.environ.get("JOBMVP_DSN", "postgresql://mvp:mvp@127.0.0.1:5432/jobmvp")
 API = "https://www.zhipin.com/wapi/zpgeek/search/joblist.json"
 MAX_PAGES = 10          # 单次上限保护（30 条/页 × 10 = 300 条）
 
+CITY_NAMES = {
+    "101010100": "北京", "101020100": "上海", "101270100": "成都",
+    "101040100": "重庆", "101110100": "西安", "101280100": "广州",
+    "101280600": "深圳", "101210100": "杭州",
+}
+
 
 def fetch_page(page, keyword: str, city: str, page_no: int, page_size: int = 30) -> dict:
     """调 joblist API（复用页面 cookie）。
@@ -61,7 +67,7 @@ def fetch_page(page, keyword: str, city: str, page_no: int, page_size: int = 30)
     return resp.json()
 
 
-def ingest(jobs: list[dict]) -> dict:
+def ingest(jobs: list[dict]) -> tuple[dict, int]:
     items = []
     for j in jobs:
         jid = j.get("encryptJobId") or ""
@@ -97,7 +103,24 @@ def ingest(jobs: list[dict]) -> dict:
                      upserted=sum(stats.values()), parse_failed=0, closed=0)
     conn.commit()
     conn.close()
-    return stats
+    return stats, run_id
+
+
+def log_step(conn, run_id, keyword, city_code, city_name, page_no,
+             job_count, code, elapsed_ms, status, error=None) -> None:
+    """写一条采集步骤日志。失败不影响主流程（日志本身不该拖垮采集）。"""
+    try:
+        conn.execute(
+            """INSERT INTO scrape_step_log
+                 (run_id, source_id, keyword, city_code, city_name, page, job_count,
+                  code, elapsed_ms, status, error)
+               VALUES (%s,'boss',%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (run_id, keyword, city_code, city_name, page_no, job_count,
+             code, elapsed_ms, status, error),
+        )
+        conn.commit()
+    except Exception as e:  # noqa: BLE001
+        print("  [warn] 写采集日志失败:", type(e).__name__, str(e)[:60])
 
 
 def main() -> int:
@@ -128,7 +151,7 @@ def main() -> int:
         print(f"采集计划：{len(keywords)} 词 × {len(cities)} 城 × {pages} 页 "
               f"= {len(combos) * pages} 页请求")
     else:
-        combos = [(args.keyword, args.city, args.city)]
+        combos = [(args.keyword, args.city, CITY_NAMES.get(args.city, args.city))]
         pages = max(1, min(args.pages, MAX_PAGES))
 
     total = 0
@@ -141,26 +164,42 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001
             print("导航首页失败（继续尝试）:", type(e).__name__, str(e)[:60])
 
+        log_conn = store.connect(DSN)      # 专用于写步骤日志，与 ingest 的连接分开
         for kw, city_code, city_name in combos:
             for pn in range(1, pages + 1):
                 print(f"\n=== {city_name} / {kw} 第 {pn} 页 ===")
+                t0 = time.time()
                 try:
                     data = fetch_page(page, kw, city_code, pn, args.page_size)
                 except Exception as e:  # noqa: BLE001
+                    elapsed = int((time.time() - t0) * 1000)
                     print("  请求失败:", type(e).__name__, str(e)[:90])
+                    log_step(log_conn, None, kw, city_code, city_name, pn, 0, None,
+                             elapsed, "error", f"{type(e).__name__}: {str(e)[:200]}")
                     break
+                elapsed = int((time.time() - t0) * 1000)
+                code = data.get("code")
                 jobs = (data.get("zpData") or {}).get("jobList") or []
-                print(f"  code={data.get('code')} 岗位数={len(jobs)}")
+                print(f"  code={code} 岗位数={len(jobs)}")
+
+                run_id = None
+                if jobs and not args.no_ingest:
+                    stats, run_id = ingest(jobs)
+                    print("  入库:", stats)
+
+                log_step(log_conn, run_id, kw, city_code, city_name, pn, len(jobs), code,
+                         elapsed, "ok" if jobs else "empty",
+                         None if code in (0, None) else f"接口 code={code}")
+
                 if not jobs:
                     print("  无更多数据")
                     break
-                if not args.no_ingest:
-                    print("  入库:", ingest(jobs))
                 total += len(jobs)
                 if pn < pages:
                     delay = random.uniform(args.min_delay, args.max_delay)
                     print(f"  随机延迟 {delay:.1f}s ...")
                     time.sleep(delay)
+        log_conn.close()
     print(f"\n完成，共 {total} 条")
     return 0
 

@@ -352,6 +352,27 @@ def get_status(refresh: int = 0, _=Depends(auth), conn=Depends(db)):
     }
 
 
+@app.get("/api/scrape_logs")
+def scrape_logs(limit: int = 50, only_error: int = 0, _=Depends(auth), conn=Depends(db)):
+    """采集步骤日志：每一步（关键词 × 城市 × 页）的返回码/条数/耗时/异常。"""
+    cond = "WHERE status <> 'ok'" if only_error else ""
+    rows = conn.execute(
+        f"""SELECT id, run_id, source_id, keyword, city_name, page, job_count,
+                   code, elapsed_ms, status, error, created_at
+            FROM scrape_step_log {cond}
+            ORDER BY id DESC LIMIT %s""",
+        (min(limit, 200),),
+    ).fetchall()
+    summary = conn.execute(
+        """SELECT count(*) AS total,
+                  count(*) FILTER (WHERE status = 'error') AS errors,
+                  count(*) FILTER (WHERE status = 'empty') AS empties,
+                  round(avg(elapsed_ms)) AS avg_ms
+           FROM scrape_step_log WHERE created_at > now() - interval '24 hours'"""
+    ).fetchone()
+    return {"rows": rows, "summary_24h": summary}
+
+
 @app.get("/api/analytics/salary_hist")
 def analytics_salary_hist(step: int = 5, _=Depends(auth), conn=Depends(db)):
     """薪资区间分布直方图（月薪 K，按 step 分桶）。"""
