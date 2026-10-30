@@ -74,7 +74,7 @@ def main() -> int:
 
     url = (f"https://www.zhipin.com/web/geek/jobs"
            f"?query={quote(args.keyword)}&city={args.city}&page=1")
-    responses: list = []
+    payloads: list[str] = []
     body_text = ""
 
     with sync_playwright() as p:
@@ -83,23 +83,30 @@ def main() -> int:
         # Chrome 138 的 CDP 不支持 Target.createTarget，复用已打开的页面
         reused = bool(ctx.pages)
         page = ctx.pages[0] if reused else ctx.new_page()
-        page.on("response", lambda r: responses.append(r) if any(m in r.url for m in JOBLIST_MARKERS) else None)
-        page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+
+        def on_resp(r):
+            if any(m in r.url for m in JOBLIST_MARKERS):
+                try:
+                    payloads.append(r.text())   # 回调内即时取，避免 reload 后 body 失效
+                except Exception:  # noqa: BLE001
+                    pass
+
+        page.on("response", on_resp)
+        # 已在搜索页就直接滚动触发（真实鼠标滚轮，不注入 JS）；否则再导航。
+        # 不用 reload：BOSS 是 SPA，reload 会 frame detached。
+        if "geek/jobs" not in page.url:
+            page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+        for _ in range(4):
+            page.mouse.wheel(0, 2000)
+            page.wait_for_timeout(1500)
         page.wait_for_timeout(args.wait * 1000)
         title = page.title()
         body_text = page.inner_text("body")[:160].replace("\n", " ")
-        # 加载完成后统一取 body（避免在回调里阻塞）
-        payloads: list[str] = []
-        for r in responses:
-            try:
-                payloads.append(r.text())
-            except Exception:  # noqa: BLE001
-                pass
         if not reused:                 # 复用了用户已开的页面就不关，避免干扰
             page.close()
 
     print(f"[2] 页面标题: {title}")
-    print(f"[3] 捕获 joblist 响应: {len(responses)} 个，可用 body: {len(payloads)} 个")
+    print(f"[3] 捕获 joblist 响应: {len(payloads)} 个")
 
     if not payloads:
         if any(k in body_text for k in ("安全验证", "请完成验证", "验证码")):
@@ -158,7 +165,7 @@ def main() -> int:
     for s in samples:
         print("      ", s)
 
-    passed = n >= 20 and rate >= 90 and sp >= 90
+    passed = n >= 10 and rate >= 90 and sp >= 90   # BOSS 一页约 15 条，10 条为合理下限
     print(f"\n=== 判定: {'PASS' if passed else 'FAIL'} ===")
     if passed:
         print("CDP 旁听可用，可把 BossAdapter 升级为 cdp 模式。")
