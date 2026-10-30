@@ -48,7 +48,12 @@ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft
 .main{flex:1;min-width:0;padding:24px 24px 48px}
 .statusbar{position:fixed;left:0;right:0;bottom:0;height:30px;background:#fff;border-top:1px solid var(--line);
 display:flex;align-items:center;gap:18px;padding:0 16px;font-size:11.5px;color:var(--muted);z-index:100;overflow-x:auto}
+.statusbar .st-items{display:flex;align-items:center;gap:18px;flex:1;min-width:0;overflow-x:auto}
 .statusbar .st{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.statusbar .st-ago{color:#9aa1ab;white-space:nowrap;font-size:11px}
+.statusbar .st-btn{padding:2px 9px;border:1px solid var(--line);background:#fff;border-radius:5px;
+cursor:pointer;font-size:11px;color:var(--muted);font-family:inherit;white-space:nowrap}
+.statusbar .st-btn:hover{background:#f6f7f9;color:var(--ink)}
 .statusbar .dot{width:7px;height:7px;border-radius:50%;background:#9aa1ab;flex-shrink:0}
 .statusbar .dot.ok{background:#22a06b}
 .statusbar .dot.bad{background:#e5484d}
@@ -390,7 +395,7 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
   </main>
 </div>
 
-<div class="statusbar" id="statusbar"><div class="st">状态加载中…</div></div>
+<div class="statusbar" id="statusbar"><div class="st-items" id="statusItems"><div class="st">状态加载中…</div></div><span class="st-ago" id="statusAgo"></span><button class="st-btn" id="statusRefresh" title="立即刷新（跳过缓存）">刷新</button></div>
 
 <script>
 const KEY = new URLSearchParams(location.search).get('key') || '';
@@ -406,9 +411,10 @@ document.getElementById('menu')?.addEventListener('click', e => {
   document.querySelectorAll('.mod').forEach(m => m.classList.toggle('active', m.dataset.mod === btn.dataset.mod));
 });
 // 底部状态栏（30 秒轮询）
-async function loadStatus(){
+let statusAt = 0;
+async function loadStatus(force){
   try{
-    const d = await api('/api/status');
+    const d = await api('/api/status' + (force ? '?refresh=1' : ''));
     const last = d.last_scrape_at ? new Date(d.last_scrape_at) : null;
     const mins = last ? Math.round((Date.now() - last.getTime()) / 60000) : null;
     const agoStr = mins == null ? '—' : mins < 1 ? '刚刚'
@@ -425,18 +431,28 @@ async function loadStatus(){
     const baText = baState === 'ok' ? '账号 正常'
                  : baState === 'warn' ? `账号 ${ba.detail || '异常'}`
                  : '账号 Chrome未启动';
-    $('statusbar').innerHTML =
+    $('statusItems').innerHTML =
       `<div class="st"><i class="dot ${d.monitor ? 'ok' : 'bad'}"></i>监控 ${d.monitor ? '运行中' : '已停止'}</div>` +
       `<div class="st">最近采集 ${agoStr}</div>` +
       `<div class="st">运行 ${upStr}</div>` +
       `<div class="st"><i class="dot ${d.network_ok ? 'ok' : 'bad'}"></i>网络 ${d.network_ok ? '在线' : '离线'}</div>` +
       `<div class="st" title="${esc((d.boss_account || {}).detail || '')}"><i class="dot ${baDot}"></i>${baText}</div>` +
       `<div class="st">数据源 ${enabled}/${srcs.length}</div>`;
+    statusAt = Date.now();
+    tickAgo();
   }catch(e){
-    $('statusbar').innerHTML = '<div class="st"><i class="dot bad"></i>状态获取失败</div>';
+    $('statusItems').innerHTML = '<div class="st"><i class="dot bad"></i>状态获取失败</div>';
   }
 }
-setInterval(loadStatus, 30000);
+function tickAgo(){
+  if(!statusAt) return;
+  const s = Math.max(0, Math.round((Date.now() - statusAt) / 1000));
+  $('statusAgo').textContent = s < 1 ? '刚刚更新' : `${s}s 前更新`;
+}
+$('statusRefresh')?.addEventListener('click', () => loadStatus(true));
+setInterval(loadStatus, 10000);
+setInterval(tickAgo, 1000);
+document.addEventListener('visibilitychange', () => { if(!document.hidden) loadStatus(); });
 
 // 求职意向
 const CAT_OPTIONS = ["后端开发","前端开发","测试","算法/AI","数据","运维/SRE","嵌入式/硬件","网络安全","移动开发"];

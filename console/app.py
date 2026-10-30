@@ -260,9 +260,9 @@ _NET_CACHE = {"ts": 0.0, "ok": False}
 
 
 def _check_network() -> bool:
-    """探测外网可达性，结果缓存 60 秒，避免状态栏轮询每次都真发请求。"""
+    """探测外网可达性，结果缓存 30 秒，避免状态栏轮询每次都真发请求。"""
     now = time.time()
-    if now - _NET_CACHE["ts"] < 60:
+    if now - _NET_CACHE["ts"] < 30:
         return _NET_CACHE["ok"]
     ok = False
     try:
@@ -278,15 +278,15 @@ def _check_network() -> bool:
 _BOSS_PROBE = {"ts": 0.0, "state": "unknown", "detail": "未探测"}
 
 
-def _probe_boss_account() -> dict:
+def _probe_boss_account(force: bool = False) -> dict:
     """真实探测 BOSS 账号功能是否正常。
 
     不只看 Chrome 端口，而是通过 CDP 用页面 cookie 调一次 joblist API（pageSize=1），
     看返回 code 是否为 0——这才代表「登录态有效 + 接口可正常调用」。
-    结果缓存 120 秒，避免状态栏轮询频繁打 BOSS。
+    结果缓存 60 秒，避免状态栏轮询频繁打 BOSS。
     """
     now = time.time()
-    if now - _BOSS_PROBE["ts"] < 120:
+    if not force and now - _BOSS_PROBE["ts"] < 60:
         return {"state": _BOSS_PROBE["state"], "detail": _BOSS_PROBE["detail"],
                 "checked_at": _BOSS_PROBE["ts"]}
 
@@ -336,7 +336,7 @@ def _probe_boss_account() -> dict:
 
 
 @app.get("/api/status")
-def get_status(_=Depends(auth), conn=Depends(db)):
+def get_status(refresh: int = 0, _=Depends(auth), conn=Depends(db)):
     """底部状态栏：监控/采集/运行时长/网络/账号/数据源。"""
     last = conn.execute("SELECT max(last_seen) AS t FROM job").fetchone()["t"]
     plan = conn.execute("SELECT enabled FROM scrape_plan WHERE source_id='boss'").fetchone()
@@ -346,7 +346,8 @@ def get_status(_=Depends(auth), conn=Depends(db)):
         "last_scrape_at": last,
         "uptime_seconds": int(time.time() - START_TIME),
         "network_ok": _check_network(),
-        "boss_account": _probe_boss_account(),
+        "server_time": time.time(),
+        "boss_account": _probe_boss_account(force=bool(refresh)),
         "sources": [{"source_id": x["source_id"], "enabled": x["enabled"]} for x in srcs],
     }
 
