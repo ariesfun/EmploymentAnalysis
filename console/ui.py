@@ -22,7 +22,25 @@ INDEX_HTML = """<!DOCTYPE html>
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.6;
 font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
-.wrap{max-width:1180px;margin:0 auto;padding:24px 20px 60px}
+.app{display:flex;min-height:100vh}
+.sidebar{width:216px;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;transition:width .18s ease;flex-shrink:0}
+.sidebar.collapsed{width:62px}
+.brand{display:flex;align-items:center;gap:10px;padding:16px 14px;border-bottom:1px solid var(--line);min-height:58px}
+.brand .logo{width:26px;height:26px;color:var(--accent);flex-shrink:0}
+.brand .logo svg{width:26px;height:26px}
+.brand-text{font-size:13px;font-weight:650;line-height:1.35;white-space:nowrap;overflow:hidden}
+.sidebar.collapsed .brand-text{display:none}
+.menu{flex:1;padding:10px 8px;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+.menu-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border:none;background:none;border-radius:8px;cursor:pointer;color:var(--muted);font-size:13px;font-family:inherit;text-align:left;white-space:nowrap;transition:background .12s}
+.menu-item:hover{background:#f6f7f9;color:var(--ink)}
+.menu-item.active{background:#eef3ff;color:var(--accent);font-weight:600}
+.menu-item svg{width:18px;height:18px;flex-shrink:0}
+.sidebar.collapsed .menu-item .label,.sidebar.collapsed .collapse-btn .label{display:none}
+.collapse-btn{display:flex;align-items:center;gap:10px;padding:10px 12px;border:none;background:none;border-top:1px solid var(--line);cursor:pointer;color:var(--muted);font-size:12px;font-family:inherit;white-space:nowrap}
+.collapse-btn:hover{color:var(--ink);background:#f6f7f9}
+.collapse-btn svg{width:16px;height:16px;transition:transform .18s}
+.sidebar.collapsed .collapse-btn svg{transform:rotate(180deg)}
+.main{flex:1;min-width:0;padding:24px 24px 60px}
 header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
 flex-wrap:wrap;margin-bottom:18px}
 h1{font-size:20px;margin:0;font-weight:650;letter-spacing:-.2px}
@@ -50,10 +68,6 @@ border:1px solid var(--line);background:#f8f9fb;color:var(--muted)}
 .bar{height:7px;background:#eef1f5;border-radius:999px;overflow:hidden;margin-top:5px}
 .bar>i{display:block;height:100%;background:var(--accent);border-radius:999px}
 .empty{color:#9aa1ab;font-size:12.5px;padding:10px 0}
-.tabs{display:flex;gap:2px;margin:14px 0 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.tab{padding:8px 15px;border:none;background:none;font-size:13.5px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:inherit}
-.tab:hover{color:var(--ink)}
-.tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
 .mod{display:none}
 .mod.active{display:block}
 
@@ -78,7 +92,42 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      </span>
+      <span class="brand-text">招聘市场数据<br>实时分析</span>
+    </div>
+    <nav class="menu" id="menu">
+      <button class="menu-item active" data-mod="overview" title="概览">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        <span class="label">概览</span>
+      </button>
+      <button class="menu-item" data-mod="market" title="市场结构">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><rect x="5" y="10" width="3" height="8"/><rect x="10.5" y="5" width="3" height="13"/><rect x="16" y="13" width="3" height="5"/></svg>
+        <span class="label">市场结构</span>
+      </button>
+      <button class="menu-item" data-mod="skills" title="技能需求">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/></svg>
+        <span class="label">技能需求</span>
+      </button>
+      <button class="menu-item" data-mod="salary" title="薪资分析">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <span class="label">薪资分析</span>
+      </button>
+      <button class="menu-item" data-mod="jobs" title="岗位明细">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        <span class="label">岗位明细</span>
+      </button>
+    </nav>
+    <button class="collapse-btn" id="collapseBtn" title="折叠/展开菜单">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>
+      <span class="label">折叠菜单</span>
+    </button>
+  </aside>
+  <main class="main">
   <header>
     <div>
       <h1>招聘市场数据实时分析</h1>
@@ -87,14 +136,6 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
     <div class="sub" id="meta"></div>
   </header>
   <div id="banner"></div>
-
-  <nav class="tabs" id="tabs">
-    <button class="tab active" data-mod="overview">概览</button>
-    <button class="tab" data-mod="market">市场结构</button>
-    <button class="tab" data-mod="skills">技能需求</button>
-    <button class="tab" data-mod="salary">薪资分析</button>
-    <button class="tab" data-mod="jobs">岗位明细</button>
-  </nav>
 
   <section class="mod active" data-mod="overview">
     <div class="grid g4" id="kpis"></div>
@@ -226,6 +267,7 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
   </section>
 
   <footer>招聘市场数据实时分析 · 指标口径 v1.3</footer>
+  </main>
 </div>
 
 <script>
@@ -234,13 +276,19 @@ const $ = id => document.getElementById(id);
 
 function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-// 模块 tab 切换
-document.getElementById('tabs')?.addEventListener('click', e => {
-  const btn = e.target.closest('.tab');
+// 左侧菜单切换模块
+document.getElementById('menu')?.addEventListener('click', e => {
+  const btn = e.target.closest('.menu-item');
   if(!btn) return;
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === btn));
+  document.querySelectorAll('.menu-item').forEach(t => t.classList.toggle('active', t === btn));
   document.querySelectorAll('.mod').forEach(m => m.classList.toggle('active', m.dataset.mod === btn.dataset.mod));
 });
+// 折叠/展开侧边栏
+document.getElementById('collapseBtn')?.addEventListener('click', () => {
+  document.getElementById('sidebar')?.classList.toggle('collapsed');
+});
+// 小屏默认折叠
+if (window.innerWidth < 900) document.getElementById('sidebar')?.classList.add('collapsed');
 
 async function api(path){
   const r = await fetch(path, {headers:{'X-API-Key': KEY}});
