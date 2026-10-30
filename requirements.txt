@@ -1,0 +1,6 @@
+# 以下为本方案参考实现实测通过的版本（Python 3.12.3 / PostgreSQL 16.15）；上线前请自行锁定并核对安全公告
+psycopg[binary]==3.3.6
+fastapi==0.162.0
+httpx==0.28.1
+uvicorn
+pytest==9.2.0

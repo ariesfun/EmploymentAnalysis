@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# 虚拟环境
+.venv/
+venv/
+
+# 数据与产物（原始层体积大、且含源站内容，不入库）
+data/raw/
+data/*.db
+data/*.db-wal
+data/*.db-shm
+output/
+
+# 本地归档（SQLite 原型，已弃用）
+_attic/
+
+# 参考工程（16MB 第三方代码，仅本地保留）
+reference/
+
+# 本地配置
+.env
+*.local
