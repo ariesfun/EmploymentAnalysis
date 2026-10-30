@@ -19,28 +19,53 @@ from jobmvp.taxonomy import category_rows, skill_rows
 
 DEFAULT_DSN = os.environ.get("JOBMVP_DSN", "postgresql://mvp:mvp@localhost/jobmvp")
 
-SOURCE_ID = "mohrss"
-SOURCE_FIELDS = [
-    "source_job_id", "url", "title_raw", "location_raw", "salary_raw",
-    "experience_raw", "edu", "company_name", "description", "posted_at", "region_code",
-]
+# 出厂源配置。tier/enabled 是合规属性，这里只给「安全默认值」：
+# 一律 enabled=false，B 级必须人工填 approval_note 才能启用。
+SOURCES = (
+    {
+        "source_id": "mohrss",
+        "name": "中国公共招聘网",
+        "tier": "A",
+        "min_interval_s": 2,
+        "max_pages": 20,
+        "fields": [
+            "source_job_id", "url", "title_raw", "location_raw", "salary_raw",
+            "experience_raw", "edu", "company_name", "description", "posted_at",
+            "region_code",
+        ],
+    },
+    {
+        "source_id": "boss",
+        "name": "BOSS直聘",
+        "tier": "B",
+        "min_interval_s": 10,      # B 级频率更保守
+        "max_pages": 3,
+        "fields": [
+            "source_job_id", "url", "title_raw", "location_raw", "salary_raw",
+            "experience_raw", "edu", "company_name", "posted_at",
+        ],
+    },
+)
 
 
-def seed_source(conn) -> None:
-    """A 级来源：默认关闭，首次运行前需显式启用（合规闸门）。"""
-    conn.execute(
-        """
-        INSERT INTO source_config
-            (source_id, name, tier, enabled, min_interval_s, max_pages,
-             close_after_miss, min_coverage, field_whitelist, approval_note)
-        VALUES (%s, %s, 'A', false, 2, 20, 3, 0.7, %s, NULL)
-        ON CONFLICT (source_id) DO UPDATE
-            SET name = EXCLUDED.name,
-                tier = EXCLUDED.tier,
-                field_whitelist = EXCLUDED.field_whitelist
-        """,
-        (SOURCE_ID, "中国公共招聘网", SOURCE_FIELDS),
-    )
+def seed_sources(conn) -> None:
+    """写入源配置。已存在的源只更新元数据，**不动 enabled / approval_note**。"""
+    for src in SOURCES:
+        conn.execute(
+            """
+            INSERT INTO source_config
+                (source_id, name, tier, enabled, min_interval_s, max_pages,
+                 close_after_miss, min_coverage, field_whitelist, approval_note)
+            VALUES (%s, %s, %s, false, %s, %s, 3, 0.7, %s, NULL)
+            ON CONFLICT (source_id) DO UPDATE
+                SET name = EXCLUDED.name,
+                    tier = EXCLUDED.tier,
+                    min_interval_s = EXCLUDED.min_interval_s,
+                    field_whitelist = EXCLUDED.field_whitelist
+            """,
+            (src["source_id"], src["name"], src["tier"],
+             src["min_interval_s"], src["max_pages"], src["fields"]),
+        )
 
 
 def seed_categories(conn) -> int:
@@ -66,7 +91,7 @@ def seed_skills(conn) -> int:
     return len(rows)
 
 
-def seed_regions(conn, pages: int = 5) -> int:
+def seed_regions(conn, pages: int = 5, source_id: str = "mohrss") -> int:
     """从站点采样 (城市, 城市码)，填充 dict_region。
 
     源站的 aab301 就是行政区划代码，采样比内置码表更可靠、也不引入维护成本。
@@ -77,7 +102,7 @@ def seed_regions(conn, pages: int = 5) -> int:
 
     from jobmvp.registry import REGISTRY
 
-    adapter = REGISTRY[SOURCE_ID]()
+    adapter = REGISTRY[source_id]()
     counter: dict[str, Counter] = {}
     for i, url in enumerate(adapter.discover(pages), start=1):
         page = adapter.fetch(url)
@@ -107,10 +132,11 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     with psycopg.connect(args.dsn, autocommit=True) as conn:
-        seed_source(conn)
+        seed_sources(conn)
         n_cat = seed_categories(conn)
         n_skill = seed_skills(conn)
-        print(f"✓ source_config: {SOURCE_ID}（tier=A，启用状态未改动）")
+        names = "、".join(f"{x['source_id']}({x['tier']})" for x in SOURCES)
+        print(f"✓ source_config: {names}（启用状态未改动）")
         print(f"✓ dict_category: {n_cat} 条规则")
         print(f"✓ dict_skill:    {n_skill} 条别名")
         if args.with_regions:

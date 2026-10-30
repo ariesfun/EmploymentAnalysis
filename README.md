@@ -115,7 +115,8 @@ EmploymentAnalysis/
 
 | source_id | 名称 | 等级 | 状态 | 说明 |
 |---|---|---|---|---|
-| `mohrss` | 中国公共招聘网 | **A** | 已接入 | 人社部公共就业平台公开列表页；无登录、无验证码；约 17 万条岗位 |
+| `mohrss` | 中国公共招聘网 | **A** | 已接入，运行中 | 人社部公共就业平台公开列表页；无登录、无验证码；约 17 万条岗位 |
+| `boss` | BOSS直聘 | **B** | 已接入，**默认关闭** | 代码与解析器就位，但受 robots 与风控限制，当前拿不到数据（见下） |
 
 采集口径：
 - 只读列表页，**不进详情页**；单页 20 条；`min_interval_s=2`。
@@ -125,6 +126,24 @@ EmploymentAnalysis/
   区县级岗位用同页学到的「区划码前 4 位 → 城市」归并。
 - PII：源站列表含 `aae004`（联系人）/`aae005`（电话）/`aae013`（邮箱），
   适配器**根本不读取**这些键，加上 `sanitize()` 的 `PII_FIELDS` 双保险。
+
+### 4.1 BOSS 直聘（B 级）现状
+
+已实现 `jobmvp/sources/boss.py`，但**当前无法产出数据**，三道门依次关闭：
+
+| 关卡 | 实测结果 |
+|---|---|
+| `source_config.enabled` | 默认 false，未启用时 `SourceDisabled`，一个请求都不发 |
+| 库级 CHECK | `tier='B'` 且 `enabled=true` 时必须有 `approval_note`，否则 `CheckViolation` |
+| robots.txt | **明确 `Disallow: /*?query=*` 与 `*?city=*`**，而列表页正是这种 URL → `PermissionError`，请求未发出 |
+| 纯 HTTP | 返回 JS 空壳（`加载中，请稍候` + `browser-check-v2.js`），无任何岗位 |
+| 真实 Chrome | 首次可过指纹校验但结果区为空；再次请求直接返回「安全验证」 |
+
+> 注意：`?query=` / `?city=` 是站方在 robots 里**显式声明禁止**的路径。
+> 岗位字段本身是公开的，但「公开可见」与「站方允许自动化访问」是两件事，
+> robots 表达的是后者。因此本项目按第 5 条硬约束直接拒绝，不做任何绕过。
+
+启用前置条件（缺一不可）：法务书面意见 → 写入 `approval_note` → 评估 browser 模式的稳定性与频率。
 
 ---
 
