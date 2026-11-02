@@ -1,6 +1,6 @@
 """控制台后端（MVP P0）：源管理 / 运行 / 错误样本 / 数据质量 / 指标预览 / 审计。"""
 from __future__ import annotations
-import hmac, json, os, time
+import hmac, json, os, threading, time
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from jobmvp import store
@@ -92,12 +92,22 @@ def set_enabled(source_id: str, body: EnableBody, user=Depends(auth), conn=Depen
     conn.commit()
     return {"ok": True}
 
+# 进程内运行占位：接口返回 202 到后台任务真正写 run_log 之间有一段竞态窗口，
+# 只查 run_log 会漏判，连点两次就会起两个 run（实测踩过）。这里用带时间戳的
+# 占位集合补上窗口，超过 30 分钟视为僵尸自动失效。
+_RUNNING_LOCK = threading.Lock()
+_RUNNING: dict[str, float] = {}
+_RUNNING_TTL = 1800.0
+
+
 def _run_in_background(source_id: str, user: str):
     conn = store.connect(DSN)
     try:
         run_source(conn, REGISTRY[source_id](), source_id, trigger="manual", actor=user)
     finally:
         conn.close()
+        with _RUNNING_LOCK:
+            _RUNNING.pop(source_id, None)
 
 @app.post("/api/sources/{source_id}/run", status_code=202)
 def trigger(source_id: str, bg: BackgroundTasks, user=Depends(auth), conn=Depends(db)):
@@ -108,8 +118,17 @@ def trigger(source_id: str, bg: BackgroundTasks, user=Depends(auth), conn=Depend
         raise HTTPException(409, "source disabled")
     if source_id not in REGISTRY:
         raise HTTPException(501, "no adapter registered")
-    if conn.execute("SELECT 1 FROM run_log WHERE source_id=%s AND status='running'", (source_id,)).fetchone():
-        raise HTTPException(409, "already running")                   # 防止并发重复运行造成 miss 计数错乱
+    with _RUNNING_LOCK:
+        now = time.time()
+        stale = [k for k, ts in _RUNNING.items() if now - ts > _RUNNING_TTL]
+        for k in stale:
+            _RUNNING.pop(k, None)
+        if source_id in _RUNNING:
+            raise HTTPException(409, "already running")
+        if conn.execute("SELECT 1 FROM run_log WHERE source_id=%s AND status='running'",
+                        (source_id,)).fetchone():
+            raise HTTPException(409, "already running")               # 防止并发重复运行造成 miss 计数错乱
+        _RUNNING[source_id] = now                                     # 先占位，堵住 202 到后台启动之间的窗口
     bg.add_task(_run_in_background, source_id, user)
     return {"accepted": True}
 
@@ -328,13 +347,22 @@ def _probe_boss_account(force: bool = False) -> dict:
 
     # 先占位时间戳：并发请求看到 ts 已更新会直接吃缓存，不会重复启动 playwright
     _BOSS_PROBE["ts"] = now
-    state, detail = "bad", "Chrome 未启动"
+
+    # 第一步：CDP 端口可达性。不可达一律判 bad（Chrome 没起来），不再往下猜。
+    # trust_env=False：本机地址绝不能走系统代理（代理会把 127.0.0.1 也拦掉，误报成探测失败）
     try:
         import httpx
-        r = httpx.get("http://127.0.0.1:9223/json/version", timeout=2)
+        r = httpx.get("http://127.0.0.1:9223/json/version", timeout=2, trust_env=False)
         if r.status_code != 200:
-            raise RuntimeError(f"CDP HTTP {r.status_code}")
+            raise RuntimeError(f"HTTP {r.status_code}")
+    except Exception as e:  # noqa: BLE001
+        detail = f"Chrome 未启动（{type(e).__name__}）"
+        _BOSS_PROBE.update({"ts": now, "state": "bad", "detail": detail})
+        return {"state": "bad", "detail": detail, "checked_at": now}
 
+    # 第二步：真调一次 joblist，用 code 判断登录态与风控
+    state, detail = "warn", "探测失败"
+    try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
             b = pw.chromium.connect_over_cdp("http://127.0.0.1:9223")
@@ -363,9 +391,8 @@ def _probe_boss_account(force: bool = False) -> dict:
             else:
                 state, detail = "warn", f"接口异常（code={code}）"
     except Exception as e:  # noqa: BLE001
-        if state != "ok":
-            state = "bad" if "9223" in str(e) or "CDP" in str(e) else "warn"
-            detail = f"探测失败：{type(e).__name__}"
+        # 走到这里说明 Chrome 是通的，但 CDP/接口调用失败（多半是页面导航中或超时）
+        state, detail = "warn", f"探测失败（{type(e).__name__}）"
 
     _BOSS_PROBE.update({"ts": now, "state": state, "detail": detail})
     return {"state": state, "detail": detail, "checked_at": now}

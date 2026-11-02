@@ -175,6 +175,17 @@ def main() -> int:
         combos = [(args.keyword, args.city, CITY_NAMES.get(args.city, args.city))]
         pages = max(1, min(args.pages, MAX_PAGES))
 
+    # 预检：Chrome 调试端口不可达时给出可执行提示，而不是抛一坨 traceback
+    try:
+        import httpx
+        r = httpx.get(f"{CDP}/json/version", timeout=3, trust_env=False)   # 本机地址绕过代理
+        if r.status_code != 200:
+            raise RuntimeError(f"HTTP {r.status_code}")
+    except Exception:  # noqa: BLE001
+        logger.error("Chrome 调试端口不可达（%s）。请先运行 tools/start_boss_chrome.bat "
+                     "启动 BOSS 专用 Chrome 并登录，再重试。", CDP)
+        return 2
+
     total = 0
     with sync_playwright() as p:
         b = p.chromium.connect_over_cdp(CDP)
