@@ -57,6 +57,23 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
     logger.propagate = False
 
+def _ensure_writable_temp() -> None:
+    """给 Playwright 指定项目内临时目录。
+
+    本机 %TEMP%（C://Users//<user>//AppData//Local//Temp）对 Playwright 的 **Node 驱动**
+    不可写，`connect_over_cdp` 会直接 `EPERM: mkdtemp`；而 Python 的 tempfile 反而能成功，
+    所以不能靠"试建一个目录"来探测——**无条件**指到项目内 .tmp/pw 最稳。
+    """
+    import tempfile
+    fallback = Path(__file__).resolve().parent.parent / ".tmp" / "pw"
+    fallback.mkdir(parents=True, exist_ok=True)
+    for k in ("TEMP", "TMP", "TMPDIR"):
+        os.environ[k] = str(fallback)
+    tempfile.tempdir = str(fallback)
+
+
+_ensure_writable_temp()
+
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 from jobmvp import store  # noqa: E402
@@ -72,6 +89,15 @@ CITY_NAMES = {
     "101010100": "北京", "101020100": "上海", "101270100": "成都",
     "101040100": "重庆", "101110100": "西安", "101280100": "广州",
     "101280600": "深圳", "101210100": "杭州",
+}
+
+# 风控类返回码：一旦命中就立刻停整轮，继续打只会加重风控（不绕过、不重试）
+RISK_CODES = {
+    35: "IP 地址异常（换网络或等冷却）",
+    36: "账号异常（需在浏览器完成验证）",
+    37: "登录态失效（请重新登录）",
+    401: "未登录",
+    403: "被拒绝",
 }
 
 
@@ -197,6 +223,7 @@ def main() -> int:
             logger.warning("导航首页失败（继续尝试）: %s %s", type(e).__name__, str(e)[:60])
 
         log_conn = store.connect(DSN)      # 专用于写步骤日志，与 ingest 的连接分开
+        aborted = False
         for kw, city_code, city_name in combos:
             for pn in range(1, pages + 1):
                 logger.info(f"--- {city_name} / {kw} 第 {pn} 页 ---")
@@ -223,6 +250,12 @@ def main() -> int:
                          elapsed, "ok" if jobs else "empty",
                          None if code in (0, None) else f"接口 code={code}")
 
+                if code in RISK_CODES:
+                    logger.error("触发风控（code=%s：%s），立即停止本次采集。"
+                                 "不重试、不绕过；请处理后重跑。", code, RISK_CODES[code])
+                    aborted = True
+                    break
+
                 if not jobs:
                     logger.info("无更多数据，结束该组合")
                     break
@@ -231,9 +264,11 @@ def main() -> int:
                     delay = random.uniform(args.min_delay, args.max_delay)
                     logger.info(f"随机延迟 {delay:.1f}s")
                     time.sleep(delay)
+            if aborted:
+                break
         log_conn.close()
     logger.info(f"采集完成，共 {total} 条")
-    return 0
+    return 4 if aborted else 0
 
 
 if __name__ == "__main__":

@@ -384,6 +384,8 @@ def _probe_boss_account(force: bool = False) -> dict:
             code = data.get("code")
             if code == 0:
                 state, detail = "ok", "正常 · 登录有效"
+            elif code == 35:
+                state, detail = "warn", "IP 异常 · 换网络或等冷却"
             elif code == 36:
                 state, detail = "warn", "异常 · 需在浏览器完成验证"
             elif code in (37, 401, 403):
