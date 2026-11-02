@@ -290,6 +290,7 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
       <p class="hint">点「查看详情」跳到源站岗位页，可在原站投递；这里只有岗位侧字段，不含 HR 联系方式</p>
       <div class="filters">
         <select id="fCat"><option value="">全部岗类</option></select>
+        <select id="fDomain" onchange="loadJobs(0)"><option value="">全部行业</option></select>
         <select id="fCity"><option value="">全部城市</option></select>
         <select id="fSort" onchange="loadJobs(0)">
           <option value="posted">最新发布</option>
@@ -964,9 +965,11 @@ async function loadJobs(offset){
   jobOffset = Math.max(0, offset || 0);
   const p = new URLSearchParams({limit: JOB_PAGE, offset: jobOffset});
   const cat = $('fCat').value, city = $('fCity').value,
+        dom = $('fDomain') ? $('fDomain').value : '',
         q = $('fQ').value.trim(), sort = $('fSort').value;
   if(cat) p.set('category', cat);
   if(city) p.set('city', city);
+  if(dom) p.set('domain', dom);
   if(q) p.set('q', q);
   if(sort) p.set('sort', sort);
   try{
@@ -974,10 +977,14 @@ async function loadJobs(offset){
     jobTotal = d.total;
     $('jobCount').textContent = `共 ${d.total} 条`;
     $('jobList').innerHTML = table(
-      [{label:'岗位'},{label:'公司'},{label:'城市'},{label:'月薪'},{label:'来源'},{label:'发布/采集'},{label:'操作'}],
+      [{label:'岗位'},{label:'公司'},{label:'行业'},{label:'城市'},{label:'月薪'},{label:'来源'},{label:'发布/采集'},{label:'操作'}],
       d.rows.map(r => [
         esc(r.title_raw),
         esc(r.company_name || '-'),
+        // 行业：公司名能认出的不加标记；按岗类推断的加 *，不冒充真实行业
+        r.domain
+          ? `${esc(r.domain)}${r.domain_inferred ? '<span class="sub" title="公司名无法识别行业，按岗类推断">*</span>' : ''}`
+          : '-',
         esc([r.city, r.district].filter(Boolean).join('·') || '-'),
         fmtSalary(r),
         esc(SOURCE_NAME[r.source_id] || r.source_id || '-'),
@@ -1153,6 +1160,9 @@ async function main(){
     $('fCity').innerHTML = '<option value="">全部城市</option>' +
       sortDesc(city).map(([k]) => k).filter(k => k !== '仅省级')
         .map(k => `<option>${esc(k)}</option>`).join('');
+    // 行业下拉：直接来自业务领域分布（同一口径 fn_job_domain）
+    $('fDomain').innerHTML = '<option value="">全部行业</option>' +
+      (domainsR.rows || []).map(r => `<option value="${esc(r.domain)}">${esc(r.domain)} (${r.n})</option>`).join('');
     loadJobs(0);
     loadPlan();
     loadScrapeLogs();
