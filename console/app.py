@@ -3,7 +3,11 @@ from __future__ import annotations
 import hmac, json, os, threading, time
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
-from jobmvp import store
+import sys
+from contextlib import asynccontextmanager
+
+from jobmvp import boss_collect, store
+from jobmvp.scheduler import CollectScheduler
 from jobmvp.registry import REGISTRY                     # 与 CLI 共用同一份适配器注册表
 from jobmvp.runner import SourceDisabled, run_source
 from .ui import router as ui_router
@@ -52,7 +56,117 @@ METRIC_VIEWS = {"new_jobs_daily": "m_new_jobs_daily", "active_jobs": "m_active_j
                 "job_lifetime": "m_job_lifetime", "skill_weekly": "m_skill_weekly"}   # 白名单，禁止拼接用户输入
 METRIC_VERSION = "v1.3"          # v1.3：region_match_pct 改为按 city 判定（兼容无区划码的源，如 BOSS）
 
-app = FastAPI(title="jobmvp console")
+# ---------------------------------------------------------------- 内置采集
+# 采集不再依赖宿主定时任务：服务进程内自己调度 + 自己执行，进度对看板可见。
+_COLLECT_LOCK = threading.Lock()
+_COLLECT: dict = {
+    "running": False, "phase": "idle", "trigger": None,
+    "started_at": None, "finished_at": None,
+    "done": 0, "total": 0, "jobs": 0, "upserted": 0,
+    "current": "", "message": None, "risk_code": None, "elapsed": 0,
+}
+_scheduler: CollectScheduler | None = None
+
+
+def _collect_progress(p: dict) -> None:
+    """boss_collect 每翻一页回调一次，只更新内存态（不碰库，避免拖慢采集）。"""
+    with _COLLECT_LOCK:
+        _COLLECT.update(
+            phase=p.get("phase") or _COLLECT["phase"],
+            done=p.get("done", _COLLECT["done"]),
+            total=p.get("total", _COLLECT["total"]),
+            jobs=p.get("jobs", _COLLECT["jobs"]),
+            upserted=p.get("upserted", _COLLECT["upserted"]),
+            current=p.get("current") or _COLLECT["current"],
+            message=p.get("message") or _COLLECT["message"],
+        )
+        if _COLLECT["started_at"]:
+            _COLLECT["elapsed"] = int(time.time() - _COLLECT["started_at"])
+
+
+def _run_collect(plan: dict, trigger: str) -> None:
+    """后台线程执行一轮采集，结束后把结果写回 scrape_plan。"""
+    try:
+        result = boss_collect.collect(plan, progress=_collect_progress)
+    except Exception as e:  # noqa: BLE001  采集线程不能把异常抛给调用方
+        logger.exception("采集异常")
+        result = {"ok": False, "total": 0, "upserted": 0, "pages_done": 0,
+                  "pages_total": 0, "aborted": True, "risk_code": None,
+                  "error_kind": "exception", "message": f"{type(e).__name__}: {str(e)[:160]}"}
+
+    status = ("success" if result["ok"] else
+              "risk" if result.get("risk_code") else "error")
+    with _COLLECT_LOCK:
+        _COLLECT.update(
+            running=False, phase=("done" if result["ok"] else "aborted"),
+            finished_at=time.time(), risk_code=result.get("risk_code"),
+            jobs=result["total"], upserted=result["upserted"],
+            done=result["pages_done"], total=result["pages_total"],
+            current=("已完成" if result["ok"] else "已停止"),
+            message=result.get("message") or None,
+            elapsed=int(time.time() - (_COLLECT["started_at"] or time.time())),
+        )
+    try:
+        conn = store.connect(DSN)
+        conn.execute(
+            """UPDATE scrape_plan SET last_status=%s, last_message=%s WHERE source_id='boss'""",
+            (status, (result.get("message") or f"抓取 {result['total']} 条")[:300]),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:  # noqa: BLE001
+        logger.warning("回写采集结果失败", exc_info=True)
+    logger.info("采集结束：%s 抓取 %d 条 / 入库 %d", status, result["total"], result["upserted"])
+
+
+def _trigger_collect(trigger: str = "manual") -> bool:
+    """触发一轮采集；已有采集在跑返回 False。调度器和接口都走这里。"""
+    with _COLLECT_LOCK:
+        if _COLLECT["running"]:
+            return False
+        conn = None
+        try:
+            conn = store.connect(DSN)
+            row = conn.execute("SELECT * FROM scrape_plan WHERE source_id='boss'").fetchone()
+        finally:
+            if conn:
+                conn.close()
+        if not row:
+            return False
+        plan = dict(row)
+        _COLLECT.update(
+            running=True, phase="start", trigger=trigger, started_at=time.time(),
+            finished_at=None, done=0, total=0, jobs=0, upserted=0,
+            current="准备连接 Chrome", message=None, risk_code=None, elapsed=0,
+        )
+    # 先写 last_run_at，避免调度器在采集期间重复判到期
+    try:
+        conn = store.connect(DSN)
+        conn.execute("UPDATE scrape_plan SET last_run_at=now() WHERE source_id='boss'")
+        conn.commit()
+        conn.close()
+    except Exception:  # noqa: BLE001
+        logger.warning("写 last_run_at 失败", exc_info=True)
+
+    threading.Thread(target=_run_collect, args=(plan, trigger),
+                     name=f"collect-{trigger}", daemon=True).start()
+    logger.info("采集已启动（trigger=%s）", trigger)
+    return True
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    global _scheduler
+    # 测试里不启调度线程（pytest 会 import 本模块）
+    if os.environ.get("JOBMVP_SCHEDULER", "1") != "0" and "pytest" not in sys.modules:
+        _scheduler = CollectScheduler(DSN, _trigger_collect)
+        _scheduler.start()
+    yield
+    if _scheduler:
+        _scheduler.stop()
+
+
+app = FastAPI(title="jobmvp console", lifespan=lifespan)
 app.include_router(ui_router)                                  # 可视化首页 /ui
 
 def auth(x_api_key: str = Header(default="")):
@@ -259,18 +373,45 @@ def put_scrape_plan(body: dict, _=Depends(auth), conn=Depends(db)):
     cities = body.get("cities") or []
     pages = max(1, min(int(body.get("pages_per_combo") or 2), 10))
     enabled = bool(body.get("enabled", True))
+    # 间隔 5-1440 分钟：再短会明显加重风控
+    interval = max(5, min(int(body.get("interval_minutes") or 60), 1440))
     conn.execute(
-        """INSERT INTO scrape_plan(source_id, keywords, cities, pages_per_combo, enabled, updated_at)
-           VALUES (%s,%s,%s::jsonb,%s,%s,now())
+        """INSERT INTO scrape_plan(source_id, keywords, cities, pages_per_combo, enabled,
+                                   interval_minutes, updated_at)
+           VALUES (%s,%s,%s::jsonb,%s,%s,%s,now())
            ON CONFLICT (source_id) DO UPDATE SET
              keywords=EXCLUDED.keywords, cities=EXCLUDED.cities,
              pages_per_combo=EXCLUDED.pages_per_combo,
-             enabled=EXCLUDED.enabled, updated_at=now()""",
-        (source_id, keywords, json.dumps(cities, ensure_ascii=False), pages, enabled),
+             enabled=EXCLUDED.enabled,
+             interval_minutes=EXCLUDED.interval_minutes, updated_at=now()""",
+        (source_id, keywords, json.dumps(cities, ensure_ascii=False), pages, enabled, interval),
     )
     conn.commit()
     return {"ok": True, "source_id": source_id, "keywords": keywords, "cities": cities,
-            "pages_per_combo": pages, "enabled": enabled}
+            "pages_per_combo": pages, "enabled": enabled, "interval_minutes": interval}
+
+
+# ---------------------------------------------------------------- 采集触发与进度
+
+@app.post("/api/collect/start", status_code=202)
+def collect_start(_=Depends(auth)):
+    """立即采集（手动按钮）。已有采集在跑返回 409。"""
+    if not _trigger_collect("manual"):
+        with _COLLECT_LOCK:
+            running = _COLLECT["running"]
+        raise HTTPException(409, "采集进行中" if running else "无采集计划")
+    return {"accepted": True}
+
+
+@app.get("/api/collect/status")
+def collect_status(_=Depends(auth)):
+    """采集进度（状态栏 / 采集配置页轮询）。"""
+    with _COLLECT_LOCK:
+        snap = dict(_COLLECT)
+    if snap["started_at"] and snap["running"]:
+        snap["elapsed"] = int(time.time() - snap["started_at"])
+    snap["scheduler"] = _scheduler.status() if _scheduler else {"alive": False}
+    return snap
 
 
 @app.get("/api/preference")
@@ -404,8 +545,15 @@ def _probe_boss_account(force: bool = False) -> dict:
 def get_status(refresh: int = 0, _=Depends(auth), conn=Depends(db)):
     """底部状态栏：监控/采集/运行时长/网络/账号/数据源。"""
     last = conn.execute("SELECT max(last_seen) AS t FROM job").fetchone()["t"]
-    plan = conn.execute("SELECT enabled FROM scrape_plan WHERE source_id='boss'").fetchone()
+    plan = conn.execute(
+        "SELECT enabled, interval_minutes, last_run_at, last_status, last_message "
+        "FROM scrape_plan WHERE source_id='boss'"
+    ).fetchone()
     srcs = conn.execute("SELECT source_id, enabled FROM source_config ORDER BY source_id").fetchall()
+    with _COLLECT_LOCK:
+        collect = dict(_COLLECT)
+    if collect["started_at"] and collect["running"]:
+        collect["elapsed"] = int(time.time() - collect["started_at"])
     return {
         "monitor": bool(plan and plan["enabled"]),
         "last_scrape_at": last,
@@ -414,6 +562,13 @@ def get_status(refresh: int = 0, _=Depends(auth), conn=Depends(db)):
         "server_time": time.time(),
         "boss_account": _probe_boss_account(force=bool(refresh)),
         "sources": [{"source_id": x["source_id"], "enabled": x["enabled"]} for x in srcs],
+        "collect": collect,
+        "plan": ({"enabled": plan["enabled"],
+                  "interval_minutes": plan["interval_minutes"],
+                  "last_run_at": plan["last_run_at"],
+                  "last_status": plan["last_status"],
+                  "last_message": plan["last_message"]} if plan else None),
+        "scheduler": _scheduler.status() if _scheduler else {"alive": False},
     }
 
 

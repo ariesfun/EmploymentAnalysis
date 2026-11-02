@@ -7,7 +7,7 @@
 → PostgreSQL → 指标视图 → 控制台 API → 可视化看板（5 模块 + 8 图表 + 底部状态栏）。
 
 **已具备**：多源采集（含 BOSS CDP 旁听 / 主动调 API）、业务去重、薪资分位、技能热度、业务领域、
-经验分布、岗位匹配度（求职意向）、采集配置、实时状态监控、定时任务（每小时）。
+经验分布、岗位匹配度（求职意向）、采集配置、实时状态监控、**内置采集调度器**（点按钮采集 / 按间隔自动采集）。
 
 ---
 
@@ -49,7 +49,7 @@
 - 薪资分位（P25/P50/P75）、薪资分布直方图、经验要求分布
 
 **运营**
-- 采集配置（关键词 + 城市 + 页数，定时任务读此执行）
+- 采集配置（关键词 + 城市 + 页数 + 自动采集间隔，项目内置调度器读此执行）
 - 求职意向（期望城市/薪资/技能/岗类 → 岗位匹配度）
 - 采集日志（每步 code/条数/耗时/异常，支持只看异常）
 - 底部状态栏（监控/采集时间/运行时长/网络/账号/数据源，10 秒刷新）
@@ -64,7 +64,7 @@
 | 后端 | FastAPI + uvicorn |
 | 前端 | 单文件 HTML + 内联 CSS/JS（无构建、无框架依赖） |
 | 测试 | pytest（71 个用例，跑真实 PostgreSQL） |
-| 调度 | 每小时定时任务（读看板配置） |
+| 调度 | **服务进程内调度器**（读 `scrape_plan.interval_minutes`，默认 60 分钟） |
 
 ### 数据规模（当前实测）
 
@@ -199,7 +199,9 @@ EmploymentAnalysis/
 ├── sql/                  001 表结构 / 002-004 指标与去重 / 005 采集配置 / 006 求职意向
 ├── tools/seed_dicts.py   字典与源配置播种
 ├── tools/gen_regions.py  生成行政区划映射表（源站 aa12.json）
-├── tools/boss_api_scrape.py   BOSS 主动调 API 采集（分页 30 条/页，--plan 读配置）
+├── jobmvp/boss_collect.py     BOSS 采集核心（CDP + joblist API，带进度回调）
+├── jobmvp/scheduler.py        内置调度器（按 interval_minutes 判到期，服务进程内跑）
+├── tools/boss_api_scrape.py   BOSS 采集 CLI 薄壳（参数解析 + 退出码，核心在 boss_collect）
 ├── tools/capture_boss_current.py  采集当前页面（仅页面导航模式兜底；API 模式可直接传 --city）
 ├── tools/boss_cdp_smoke.py    CDP 连通性自检
 ├── tools/start_boss_chrome.bat  启动 BOSS 专用 Chrome（9223 + 独立 profile）
@@ -297,7 +299,18 @@ python tools/import_boss.py path/to/jobs.json             # 写库
 - `tools/boss_cdp_smoke.py` 是 CDP 只读自检脚本（验证能否拿到明文 `salaryDesc`），
   需自行用独立 profile 启动 Chrome 并登录后运行。
 
-### 4.3 主动调 API 采集（`tools/boss_api_scrape.py`，推荐）
+### 4.3 采集的三种入口（同一份实现）
+
+| 入口 | 用途 |
+|---|---|
+| 看板「采集配置」→ **立即采集** | 手动触发，按钮旁有实时进度条，状态栏同步显示 |
+| **内置调度器** | 勾选「自动采集」+ 设间隔（5-1440 分钟），服务进程内按 `last_run_at` 判到期 |
+| `tools/boss_api_scrape.py --plan` | 命令行/排障用，与上面两个共用 `jobmvp/boss_collect.py` |
+
+> 采集**不依赖宿主定时任务**：调度器是服务进程内的守护线程（`jobmvp/scheduler.py`），
+> 换机器/换宿主都不影响。宿主的 automation 已停用。
+
+#### 主动调 API 采集（`tools/boss_api_scrape.py`）
 
 在已登录页面上下文里直接调 `joblist.json`（复用 cookie），**30 条/页**，比旁听一页 15 条快一倍：
 
@@ -305,7 +318,7 @@ python tools/import_boss.py path/to/jobs.json             # 写库
 # 单次：关键词 × 城市 × 页数
 python tools/boss_api_scrape.py --keyword 开发 --city 101110100 --pages 3
 
-# 按看板「采集配置」里保存的计划批量跑（定时任务用的就是这个）
+# 按看板「采集配置」里保存的计划批量跑（与「立即采集」按钮同一份实现）
 python tools/boss_api_scrape.py --plan
 ```
 
@@ -325,7 +338,7 @@ python tools/boss_api_scrape.py --plan
 | 薪资分析 | 薪资分位、薪资分布直方图、经验要求分布 |
 | 岗位明细 | 在招岗位（筛选/搜索/分页）、运行历史、未映射、审计日志 |
 | 求职意向 | 期望城市/薪资/技能/岗类 → 岗位匹配度打分（0-100） |
-| 采集配置 | 关键词 + 城市 + 每组合页数，定时任务按此执行 |
+| 采集配置 | 立即采集按钮 + 自动采集开关 + 间隔分钟 + 关键词/城市/页数 |
 
 **底部状态栏**（30 秒轮询，缓存见括号）：
 
@@ -517,7 +530,7 @@ JOBMVP_API_KEY=k \
 **⚠️ 测试会 TRUNCATE 业务表，`TEST_DSN` 与 `JOBMVP_DSN` 必须都指向测试库。**
 （`console/app.py` 在 import 时读 `JOBMVP_DSN`，不设置会连到业务库。）
 
-当前：**71 passed**（含 CLI、双源适配器、指标口径、控制台接口、求职意向匹配等）。
+当前：**75 passed**（含 CLI、双源适配器、指标口径、控制台接口、求职意向匹配、采集核心纯函数等）。
 
 最近一次全功能验收（2026-11-02）：**71 测试通过 · 26 个接口全通 · 7 个看板模块无异常 · mohrss 真实采集 60 页 523 条入库**，详见 [`docs/验收-全功能流程.md`](docs/验收-全功能流程.md)。
 

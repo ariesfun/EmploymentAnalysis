@@ -1,4 +1,7 @@
-import os, subprocess, pytest
+import os, subprocess, uuid
+from pathlib import Path
+
+import pytest
 from jobmvp import store
 DSN = os.environ.get("TEST_DSN", "postgresql://mvp:mvp@localhost/jobmvp")
 
@@ -15,3 +18,17 @@ def conn():
     c.commit()
     yield c
     c.close()
+
+
+@pytest.fixture()
+def raw_dir():
+    """原始层落盘目录。
+
+    刻意不用 pytest 的 `tmp_path`：它在会话结束时会走 `shutil.rmtree` 批量删除，
+    而本机 `%TEMP%` 是拒绝访问的（WinError 5），宿主的删除守卫建不了锁就会
+    `SystemExit(1)` —— 表现为"所有用例都过但退出码是 1、且不打印汇总"。
+    这里改用项目内 .tmp/ 下的唯一目录，不删（已被 .gitignore 忽略）。
+    """
+    d = Path(__file__).resolve().parent.parent / ".tmp" / "tests" / uuid.uuid4().hex[:8]
+    d.mkdir(parents=True, exist_ok=True)
+    return d

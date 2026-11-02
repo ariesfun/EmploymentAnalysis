@@ -55,6 +55,10 @@ display:flex;align-items:center;gap:18px;padding:0 16px;font-size:11.5px;color:v
 .statusbar .st-btn{padding:2px 9px;border:1px solid var(--line);background:#fff;border-radius:5px;
 cursor:pointer;font-size:11px;color:var(--muted);font-family:inherit;white-space:nowrap}
 .statusbar .st-btn:hover{background:#f6f7f9;color:var(--ink)}
+.pbar{height:6px;background:#eef0f4;border-radius:3px;overflow:hidden;margin-top:14px}
+.pbar-in{height:100%;width:0;background:var(--accent);transition:width .3s ease}
+.pbar-in.run{background:linear-gradient(90deg,#4f8cff,#6d5efc)}
+.pbar-in.err{background:#e5484d}
 .logbox{background:#0f1115;color:#d7dce3;border-radius:8px;padding:12px 14px;
 font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:11.5px;line-height:1.7;
 max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-all}
@@ -62,6 +66,8 @@ max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-all}
 .statusbar .dot.ok{background:#22a06b}
 .statusbar .dot.bad{background:#e5484d}
 .statusbar .dot.warn{background:#f5a623}
+.statusbar .dot.run{background:#4f8cff;animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
 flex-wrap:wrap;margin-bottom:18px}
 h1{font-size:20px;margin:0;font-weight:650;letter-spacing:-.2px}
@@ -365,8 +371,31 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
 
   <section class="mod" data-mod="config">
     <div class="card">
+      <h2>采集控制</h2>
+      <p class="hint">采集是<b>项目内置能力</b>：点「立即采集」在本机执行，进度实时显示；也可开启自动采集按间隔跑（不依赖外部定时任务）</p>
+
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <button id="collectBtn" onclick="startCollect()"
+          style="padding:8px 20px;border:none;background:var(--accent);color:#fff;border-radius:8px;cursor:pointer;font-size:13px;font-family:inherit">
+          立即采集</button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
+          <input type="checkbox" id="planAuto" onchange="savePlan()"> 自动采集
+        </label>
+        <span style="font-size:12.5px;color:var(--muted)">每</span>
+        <input id="planInterval" type="number" min="5" max="1440" value="60"
+          onchange="savePlan()"
+          style="width:76px;padding:5px 8px;border:1px solid #d5d9e0;border-radius:6px;font-size:13px">
+        <span style="font-size:12.5px;color:var(--muted)">分钟</span>
+        <span id="collectMsg" class="sub"></span>
+      </div>
+
+      <div class="pbar"><div class="pbar-in" id="pbar"></div></div>
+      <div class="sub" id="collectInfo" style="margin-top:8px">尚未采集</div>
+    </div>
+
+    <div class="card">
       <h2>采集配置</h2>
-      <p class="hint">配置采集的<b>关键词</b>和<b>城市</b>，定时任务按此执行（每组合 30 条/页）</p>
+      <p class="hint">配置采集的<b>关键词</b>和<b>城市</b>（每组合 30 条/页）</p>
 
       <div style="margin-bottom:16px">
         <label style="font-size:12.5px;color:var(--muted)">关键词（逗号分隔）</label>
@@ -391,7 +420,8 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
         <span id="planMsg" class="sub"></span>
       </div>
       <p class="hint" style="margin-top:14px">
-        定时任务（每小时）会读取此配置执行采集。前提：Chrome 9223 常驻且已登录 BOSS。
+        保存后点上方「立即采集」即可按此配置跑；勾选「自动采集」则按间隔自动执行。
+        前提：Chrome 9223 常驻且已登录 BOSS（tools/start_boss_chrome.bat）。
       </p>
     </div>
 
@@ -469,15 +499,38 @@ async function loadStatus(force){
     const baText = baState === 'ok' ? '账号 正常'
                  : baState === 'warn' ? `账号 ${ba.detail || '异常'}`
                  : '账号 Chrome未启动';
+    // 采集进度：运行中优先显示进度，否则显示上次采集距今
+    const c = d.collect || {};
+    let collectItem;
+    if(c.running){
+      const pct = c.total > 0 ? Math.min(100, Math.round(c.done / c.total * 100)) : 0;
+      collectItem = `<div class="st" title="${esc(c.current || '')}">`
+        + `<i class="dot run"></i>采集中 ${c.done}/${c.total || '?'} 页 · ${c.jobs || 0} 条`
+        + `${pct ? ` · ${pct}%` : ''} · ${fmtDur(c.elapsed)}</div>`;
+    }else if(c.phase === 'aborted'){
+      collectItem = `<div class="st" title="${esc(c.message || '')}"><i class="dot bad"></i>采集中止</div>`;
+    }else{
+      collectItem = `<div class="st">最近采集 ${agoStr}</div>`;
+    }
+
     $('statusItems').innerHTML =
       `<div class="st"><i class="dot ${d.monitor ? 'ok' : 'bad'}"></i>监控 ${d.monitor ? '运行中' : '已停止'}</div>` +
-      `<div class="st">最近采集 ${agoStr}</div>` +
+      collectItem +
       `<div class="st">运行 ${upStr}</div>` +
       `<div class="st"><i class="dot ${d.network_ok ? 'ok' : 'bad'}"></i>网络 ${d.network_ok ? '在线' : '离线'}</div>` +
       `<div class="st" title="${esc((d.boss_account || {}).detail || '')}"><i class="dot ${baDot}"></i>${baText}</div>` +
       `<div class="st">数据源 ${enabled}/${srcs.length}</div>`;
     statusAt = Date.now();
     tickAgo();
+
+    // 采集页也同步刷新（如果在采集配置页）
+    renderCollect(c);
+    // 采集期间加密轮询：3 秒一次
+    if(c.running){
+      if(!window._fastTimer) window._fastTimer = setInterval(() => loadStatus(), 3000);
+    }else if(window._fastTimer){
+      clearInterval(window._fastTimer); window._fastTimer = null;
+    }
   }catch(e){
     $('statusItems').innerHTML = '<div class="st"><i class="dot bad"></i>状态获取失败</div>';
   }
@@ -617,6 +670,8 @@ async function loadPlan(){
     const d = await api('/api/scrape_plan');
     $('planKeywords').value = (d.keywords || []).join(', ');
     $('planPages').value = d.pages_per_combo || 2;
+    $('planAuto').checked = !!d.enabled;
+    $('planInterval').value = d.interval_minutes || 60;
     const selected = new Set((d.cities || []).map(c => c.code));
     $('planCities').innerHTML = CITY_OPTIONS.map(c =>
       `<label style="display:flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;cursor:pointer;font-size:12.5px">
@@ -628,16 +683,71 @@ async function savePlan(){
   const keywords = $('planKeywords').value.split(/[,，\s]+/).map(x=>x.trim()).filter(Boolean);
   const cities = [...$('planCities').querySelectorAll('input:checked')].map(el => ({code: el.value, name: el.dataset.name}));
   const pages = parseInt($('planPages').value) || 2;
+  const enabled = $('planAuto').checked;
+  const interval = Math.max(5, Math.min(parseInt($('planInterval').value) || 60, 1440));
   try{
     const r = await fetch('/api/scrape_plan', {
       method: 'PUT',
       headers: {'X-API-Key': KEY, 'Content-Type': 'application/json'},
-      body: JSON.stringify({source_id:'boss', keywords, cities, pages_per_combo: pages, enabled: true}),
+      body: JSON.stringify({source_id:'boss', keywords, cities, pages_per_combo: pages,
+                            enabled, interval_minutes: interval}),
     });
     const d = await r.json();
-    $('planMsg').textContent = d.ok ? `已保存（${keywords.length} 词 × ${cities.length} 城）` : '保存失败';
+    $('planMsg').textContent = d.ok
+      ? `已保存（${keywords.length} 词 × ${cities.length} 城${enabled ? ` · 每 ${interval} 分钟自动` : ' · 仅手动'}）`
+      : '保存失败';
   }catch(e){ $('planMsg').textContent = '保存失败: ' + e.message; }
   setTimeout(() => { $('planMsg').textContent = ''; }, 3000);
+}
+
+// 采集控制（项目内置采集）
+function fmtDur(sec){
+  sec = Math.max(0, Math.round(sec || 0));
+  return sec >= 60 ? `${Math.floor(sec/60)}m ${sec%60}s` : `${sec}s`;
+}
+async function startCollect(){
+  const btn = $('collectBtn');
+  btn.disabled = true; btn.textContent = '启动中…';
+  try{
+    const r = await fetch('/api/collect/start', {method:'POST', headers:{'X-API-Key': KEY}});
+    const d = await r.json();
+    if(r.status === 202){
+      $('collectMsg').textContent = '已启动';
+      pollCollect();
+    }else{
+      $('collectMsg').textContent = d.detail || '启动失败';
+      btn.disabled = false; btn.textContent = '立即采集';
+    }
+  }catch(e){
+    $('collectMsg').textContent = '启动失败: ' + e.message;
+    btn.disabled = false; btn.textContent = '立即采集';
+  }
+  setTimeout(() => { $('collectMsg').textContent = ''; }, 3000);
+}
+function renderCollect(c){
+  const bar = $('pbar'), info = $('collectInfo'), btn = $('collectBtn');
+  if(!c) return;
+  const total = c.total || 0, done = c.done || 0;
+  const pct = total > 0 ? Math.min(100, done / total * 100) : (c.running ? 3 : 0);
+  bar.style.width = pct.toFixed(1) + '%';
+  bar.className = 'pbar-in' + (c.running ? ' run' : (c.phase === 'aborted' ? ' err' : ''));
+
+  if(c.running){
+    btn.disabled = true; btn.textContent = '采集中…';
+    info.textContent = `采集中 · ${done}/${total || '?'} 页 · 抓到 ${c.jobs || 0} 条 · 已入库 ${c.upserted || 0} · ${fmtDur(c.elapsed)} · ${c.current || ''}`;
+  }else{
+    btn.disabled = false; btn.textContent = '立即采集';
+    if(c.phase === 'done'){
+      info.textContent = `上次采集完成 · ${done}/${total} 页 · 抓到 ${c.jobs} 条 · 入库 ${c.upserted} · 耗时 ${fmtDur(c.elapsed)}（${c.trigger === 'auto' ? '自动' : '手动'}）`;
+    }else if(c.phase === 'aborted'){
+      info.textContent = `上次采集中止 · ${done}/${total} 页 · ${c.message || '未知原因'}`;
+    }else{
+      info.textContent = '尚未采集';
+    }
+  }
+}
+async function pollCollect(){
+  try{ renderCollect(await api('/api/collect/status')); }catch(e){ /* 静默 */ }
 }
 
 // 折叠/展开侧边栏
