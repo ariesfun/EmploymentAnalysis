@@ -84,6 +84,32 @@ def _collect_progress(p: dict) -> None:
             _COLLECT["elapsed"] = int(time.time() - _COLLECT["started_at"])
 
 
+def _collect_snapshot(conn) -> dict:
+    """采集快照：优先内存态；服务重启后内存清零，则从 scrape_plan 回显上次结果。"""
+    with _COLLECT_LOCK:
+        snap = dict(_COLLECT)
+    if snap["started_at"] and snap["running"]:
+        snap["elapsed"] = int(time.time() - snap["started_at"])
+    snap["from_db"] = False
+    if snap["phase"] == "idle":
+        try:
+            row = conn.execute(
+                "SELECT last_run_at, last_status, last_message FROM scrape_plan WHERE source_id='boss'"
+            ).fetchone()
+        except Exception:  # noqa: BLE001
+            row = None
+        if row and row["last_run_at"]:
+            ok = row["last_status"] == "success"
+            snap.update(
+                phase=("done" if ok else "aborted"),
+                finished_at=row["last_run_at"].timestamp(),
+                message=row["last_message"],
+                current=("已完成" if ok else "已停止"),
+                from_db=True,
+            )
+    return snap
+
+
 def _run_collect(plan: dict, trigger: str) -> None:
     """后台线程执行一轮采集，结束后把结果写回 scrape_plan。"""
     try:
@@ -404,12 +430,9 @@ def collect_start(_=Depends(auth)):
 
 
 @app.get("/api/collect/status")
-def collect_status(_=Depends(auth)):
+def collect_status(_=Depends(auth), conn=Depends(db)):
     """采集进度（状态栏 / 采集配置页轮询）。"""
-    with _COLLECT_LOCK:
-        snap = dict(_COLLECT)
-    if snap["started_at"] and snap["running"]:
-        snap["elapsed"] = int(time.time() - snap["started_at"])
+    snap = _collect_snapshot(conn)
     snap["scheduler"] = _scheduler.status() if _scheduler else {"alive": False}
     return snap
 
@@ -550,10 +573,7 @@ def get_status(refresh: int = 0, _=Depends(auth), conn=Depends(db)):
         "FROM scrape_plan WHERE source_id='boss'"
     ).fetchone()
     srcs = conn.execute("SELECT source_id, enabled FROM source_config ORDER BY source_id").fetchall()
-    with _COLLECT_LOCK:
-        collect = dict(_COLLECT)
-    if collect["started_at"] and collect["running"]:
-        collect["elapsed"] = int(time.time() - collect["started_at"])
+    collect = _collect_snapshot(conn)
     return {
         "monitor": bool(plan and plan["enabled"]),
         "last_scrape_at": last,

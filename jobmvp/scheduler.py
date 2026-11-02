@@ -24,6 +24,10 @@ from . import store
 
 logger = logging.getLogger("scheduler")
 
+# 风控熔断：上一轮被风控中止（last_status='risk'）后，至少要冷却这么久再自动跑。
+# 实测连续跑 3 次（约 70 个请求 / 2 小时）就会吃 code=35，光靠 interval 挡不住。
+RISK_COOLDOWN_MIN = 180
+
 
 class CollectScheduler(threading.Thread):
     """每 tick_seconds 检查一次 scrape_plan，到期就调用 trigger('auto')。"""
@@ -86,6 +90,11 @@ class CollectScheduler(threading.Thread):
             if elapsed_min < interval:
                 self.last_reason = f"未到期（{elapsed_min:.0f}/{interval} 分钟）"
                 return False
+            # 上一轮被风控中止 -> 强制冷却，避免调度器继续撞墙加重风控
+            if plan.get("last_status") == "risk" and elapsed_min < RISK_COOLDOWN_MIN:
+                self.last_reason = (f"风控冷却中（距上次 {elapsed_min:.0f} 分钟，"
+                                    f"需 {RISK_COOLDOWN_MIN} 分钟）")
+                return False
 
         ok = self.trigger("auto")
         self.last_reason = "已触发采集" if ok else "已有采集在跑，跳过"
@@ -97,4 +106,5 @@ class CollectScheduler(threading.Thread):
             "last_check": self.last_check.isoformat() if self.last_check else None,
             "last_reason": self.last_reason,
             "tick_seconds": self.tick_seconds,
+            "risk_cooldown_minutes": RISK_COOLDOWN_MIN,
         }

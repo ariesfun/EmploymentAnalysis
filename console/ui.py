@@ -187,6 +187,19 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
   <div id="banner"></div>
 
   <section class="mod active" data-mod="overview">
+    <div class="card" style="padding:13px 16px">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <button class="js-collect-btn" onclick="startCollect()"
+          style="padding:7px 18px;border:none;background:var(--accent);color:#fff;border-radius:8px;cursor:pointer;font-size:13px;font-family:inherit;flex-shrink:0">
+          立即采集</button>
+        <div style="flex:1;min-width:220px">
+          <div class="pbar" style="margin:0"><div class="pbar-in js-collect-bar"></div></div>
+          <div class="sub js-collect-info" style="margin-top:6px">尚未采集</div>
+        </div>
+        <span class="sub js-collect-msg"></span>
+      </div>
+    </div>
+
     <div class="grid g4" id="kpis"></div>
 
     <div class="grid g2">
@@ -375,22 +388,22 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
       <p class="hint">采集是<b>项目内置能力</b>：点「立即采集」在本机执行，进度实时显示；也可开启自动采集按间隔跑（不依赖外部定时任务）</p>
 
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <button id="collectBtn" onclick="startCollect()"
+        <button class="js-collect-btn" onclick="startCollect()"
           style="padding:8px 20px;border:none;background:var(--accent);color:#fff;border-radius:8px;cursor:pointer;font-size:13px;font-family:inherit">
           立即采集</button>
         <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
           <input type="checkbox" id="planAuto" onchange="savePlan()"> 自动采集
         </label>
         <span style="font-size:12.5px;color:var(--muted)">每</span>
-        <input id="planInterval" type="number" min="5" max="1440" value="60"
+        <input id="planInterval" type="number" min="5" max="1440" value="180"
           onchange="savePlan()"
           style="width:76px;padding:5px 8px;border:1px solid #d5d9e0;border-radius:6px;font-size:13px">
         <span style="font-size:12.5px;color:var(--muted)">分钟</span>
-        <span id="collectMsg" class="sub"></span>
+        <span class="sub js-collect-msg"></span>
       </div>
 
-      <div class="pbar"><div class="pbar-in" id="pbar"></div></div>
-      <div class="sub" id="collectInfo" style="margin-top:8px">尚未采集</div>
+      <div class="pbar"><div class="pbar-in js-collect-bar"></div></div>
+      <div class="sub js-collect-info" style="margin-top:8px">尚未采集</div>
     </div>
 
     <div class="card">
@@ -671,7 +684,7 @@ async function loadPlan(){
     $('planKeywords').value = (d.keywords || []).join(', ');
     $('planPages').value = d.pages_per_combo || 2;
     $('planAuto').checked = !!d.enabled;
-    $('planInterval').value = d.interval_minutes || 60;
+    $('planInterval').value = d.interval_minutes || 180;
     const selected = new Set((d.cities || []).map(c => c.code));
     $('planCities').innerHTML = CITY_OPTIONS.map(c =>
       `<label style="display:flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;cursor:pointer;font-size:12.5px">
@@ -684,7 +697,7 @@ async function savePlan(){
   const cities = [...$('planCities').querySelectorAll('input:checked')].map(el => ({code: el.value, name: el.dataset.name}));
   const pages = parseInt($('planPages').value) || 2;
   const enabled = $('planAuto').checked;
-  const interval = Math.max(5, Math.min(parseInt($('planInterval').value) || 60, 1440));
+  const interval = Math.max(5, Math.min(parseInt($('planInterval').value) || 180, 1440));
   try{
     const r = await fetch('/api/scrape_plan', {
       method: 'PUT',
@@ -705,46 +718,66 @@ function fmtDur(sec){
   sec = Math.max(0, Math.round(sec || 0));
   return sec >= 60 ? `${Math.floor(sec/60)}m ${sec%60}s` : `${sec}s`;
 }
+function setCollectBtns(disabled, text){
+  document.querySelectorAll('.js-collect-btn').forEach(b => {
+    b.disabled = disabled; b.textContent = text;
+  });
+}
+function setCollectMsg(t){
+  document.querySelectorAll('.js-collect-msg').forEach(e => { e.textContent = t; });
+}
 async function startCollect(){
-  const btn = $('collectBtn');
-  btn.disabled = true; btn.textContent = '启动中…';
+  setCollectBtns(true, '启动中…');
   try{
     const r = await fetch('/api/collect/start', {method:'POST', headers:{'X-API-Key': KEY}});
     const d = await r.json();
     if(r.status === 202){
-      $('collectMsg').textContent = '已启动';
+      setCollectMsg('已启动');
       pollCollect();
     }else{
-      $('collectMsg').textContent = d.detail || '启动失败';
-      btn.disabled = false; btn.textContent = '立即采集';
+      setCollectMsg(d.detail || '启动失败');
+      setCollectBtns(false, '立即采集');
     }
   }catch(e){
-    $('collectMsg').textContent = '启动失败: ' + e.message;
-    btn.disabled = false; btn.textContent = '立即采集';
+    setCollectMsg('启动失败: ' + e.message);
+    setCollectBtns(false, '立即采集');
   }
-  setTimeout(() => { $('collectMsg').textContent = ''; }, 3000);
+  setTimeout(() => setCollectMsg(''), 3000);
 }
 function renderCollect(c){
-  const bar = $('pbar'), info = $('collectInfo'), btn = $('collectBtn');
   if(!c) return;
   const total = c.total || 0, done = c.done || 0;
   const pct = total > 0 ? Math.min(100, done / total * 100) : (c.running ? 3 : 0);
-  bar.style.width = pct.toFixed(1) + '%';
-  bar.className = 'pbar-in' + (c.running ? ' run' : (c.phase === 'aborted' ? ' err' : ''));
+  const cls = 'pbar-in js-collect-bar' + (c.running ? ' run' : (c.phase === 'aborted' ? ' err' : ''));
+  document.querySelectorAll('.js-collect-bar').forEach(el => {
+    el.style.width = pct.toFixed(1) + '%';
+    el.className = cls;
+    // width:0% 仍会被渲染出 ~30px（浏览器最小宽度），会看着像一段"残留红条"
+    el.style.visibility = pct > 0 ? 'visible' : 'hidden';
+  });
 
+  let text;
   if(c.running){
-    btn.disabled = true; btn.textContent = '采集中…';
-    info.textContent = `采集中 · ${done}/${total || '?'} 页 · 抓到 ${c.jobs || 0} 条 · 已入库 ${c.upserted || 0} · ${fmtDur(c.elapsed)} · ${c.current || ''}`;
+    setCollectBtns(true, '采集中…');
+    text = `采集中 · ${done}/${total || '?'} 页 · 抓到 ${c.jobs || 0} 条 · 已入库 ${c.upserted || 0} · ${fmtDur(c.elapsed)} · ${c.current || ''}`;
   }else{
-    btn.disabled = false; btn.textContent = '立即采集';
-    if(c.phase === 'done'){
-      info.textContent = `上次采集完成 · ${done}/${total} 页 · 抓到 ${c.jobs} 条 · 入库 ${c.upserted} · 耗时 ${fmtDur(c.elapsed)}（${c.trigger === 'auto' ? '自动' : '手动'}）`;
+    setCollectBtns(false, '立即采集');
+    if(c.from_db){
+      // 服务重启后内存态清零，从 scrape_plan 回显上次结果
+      const t = c.finished_at
+        ? new Date(c.finished_at * 1000).toLocaleString('zh-CN',
+            {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'})
+        : '';
+      text = `上次采集${c.phase === 'done' ? '完成' : '中止'} · ${c.message || ''}${t ? ' · ' + t : ''}`;
+    }else if(c.phase === 'done'){
+      text = `上次采集完成 · ${done}/${total} 页 · 抓到 ${c.jobs} 条 · 入库 ${c.upserted} · 耗时 ${fmtDur(c.elapsed)}（${c.trigger === 'auto' ? '自动' : '手动'}）`;
     }else if(c.phase === 'aborted'){
-      info.textContent = `上次采集中止 · ${done}/${total} 页 · ${c.message || '未知原因'}`;
+      text = `上次采集中止 · ${done}/${total} 页 · ${c.message || '未知原因'}`;
     }else{
-      info.textContent = '尚未采集';
+      text = '尚未采集';
     }
   }
+  document.querySelectorAll('.js-collect-info').forEach(el => { el.textContent = text; });
 }
 async function pollCollect(){
   try{ renderCollect(await api('/api/collect/status')); }catch(e){ /* 静默 */ }
@@ -966,6 +999,8 @@ async function loadJobs(offset){
 function pageJobs(delta){ loadJobs(jobOffset + delta * JOB_PAGE); }
 
 async function triggerRun(id){
+  // BOSS 走项目内置采集（CDP + joblist，30 条/页）；旧的 /api/sources/{id}/run 对 BOSS 用的是 http 模式，采不到
+  if(id === 'boss'){ return startCollect(); }
   if(!confirm('立即采集 ' + id + '？约需 60~90 秒，期间运行历史里会看到 running。')) return;
   const r = await fetch(`/api/sources/${id}/run`, {method:'POST', headers:{'X-API-Key':KEY}});
   if(r.status === 202){ alert('已接受，后台执行中。约 1 分钟后刷新本页。'); }

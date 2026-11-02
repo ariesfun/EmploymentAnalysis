@@ -4,7 +4,8 @@
 -- 换台机器/换个宿主就断了。本迁移给 scrape_plan 补上「间隔」和「上次运行」，
 -- 让 jobmvp.scheduler 能在服务进程内自主判断该不该跑。
 
-ALTER TABLE scrape_plan ADD COLUMN IF NOT EXISTS interval_minutes int NOT NULL DEFAULT 60;
+-- 默认 180 分钟：一轮 30 页请求，60 分钟太密，实测 2 小时跑 3 轮就吃 code=35
+ALTER TABLE scrape_plan ADD COLUMN IF NOT EXISTS interval_minutes int NOT NULL DEFAULT 180;
 ALTER TABLE scrape_plan ADD COLUMN IF NOT EXISTS last_run_at      timestamptz;
 ALTER TABLE scrape_plan ADD COLUMN IF NOT EXISTS last_status      text;   -- success / risk / error
 ALTER TABLE scrape_plan ADD COLUMN IF NOT EXISTS last_message     text;   -- 上次结果摘要
