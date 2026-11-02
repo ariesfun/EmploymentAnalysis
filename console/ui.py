@@ -1076,8 +1076,20 @@ async function main(){
           border-radius:7px;font-size:12px;cursor:pointer">立即采集</button>
       </div>
       <div class="sub" style="margin-top:4px">间隔 ${esc(s.min_interval_s)}s ·
-        ${s.last_run ? `上次 ${esc(s.last_run.status)} · 解析 ${s.last_run.parsed} 条 ·
-        ${esc((s.last_run.finished_at||'').slice(0,19).replace('T',' '))}` : '尚未运行'}</div>
+        ${s.collect
+          ? (() => {
+              const st = s.collect.last_status;
+              const label = st === 'success' ? '完成' : (st === 'risk' ? '风控中止' : '失败');
+              const msg = s.collect.last_message || '';
+              const m = msg.match(/code=(\d+)/);
+              const detail = st === 'success' ? esc(msg)
+                           : (m ? `code=${m[1]}` : esc(msg.slice(0, 26)) + (msg.length > 26 ? '…' : ''));
+              return `上次 ${label} · ${detail} · ${esc((s.collect.last_run_at || '').slice(5, 16).replace('T', ' '))}（整轮）`;
+            })()
+          : (s.last_run
+              ? `上次 ${esc(s.last_run.status)} · 解析 ${s.last_run.parsed} 条 ·
+                 ${esc((s.last_run.finished_at || '').slice(0, 19).replace('T', ' '))}`
+              : '尚未运行')}</div>
       </div>`).join('') || '<div class="empty">无数据源</div>';
 
     const byDay = {};

@@ -213,10 +213,19 @@ class EnableBody(BaseModel):
 
 @app.get("/api/sources")
 def sources(_=Depends(auth), conn=Depends(db)):
-    return conn.execute("""SELECT s.source_id,s.name,s.tier,s.enabled,s.min_interval_s,s.field_whitelist,s.approval_note,
+    rows = conn.execute("""SELECT s.source_id,s.name,s.tier,s.enabled,s.min_interval_s,s.field_whitelist,s.approval_note,
         (SELECT row_to_json(r) FROM (SELECT run_id,status,started_at,finished_at,fetched,parsed,parse_failed,closed,error
                                      FROM run_log WHERE source_id=s.source_id ORDER BY started_at DESC LIMIT 1) r) AS last_run
         FROM source_config s ORDER BY s.source_id""").fetchall()
+    # BOSS 每翻一页就写一条 run_log，last_run 只是"最后一页 30 条"，
+    # 会让人以为整轮只采了 30 条。这里补一个整轮汇总（来自 scrape_plan）。
+    plan = conn.execute(
+        "SELECT last_run_at, last_status, last_message FROM scrape_plan WHERE source_id='boss'"
+    ).fetchone()
+    for r in rows:
+        if r["source_id"] == "boss" and plan:
+            r["collect"] = plan
+    return rows
 
 @app.post("/api/sources/{source_id}/enable")
 def set_enabled(source_id: str, body: EnableBody, user=Depends(auth), conn=Depends(db)):
@@ -258,6 +267,15 @@ def trigger(source_id: str, bg: BackgroundTasks, user=Depends(auth), conn=Depend
         raise HTTPException(409, "source disabled")
     if source_id not in REGISTRY:
         raise HTTPException(501, "no adapter registered")
+    # BOSS 必须走内置采集（CDP + joblist）：
+    # BossAdapter 的 http 模式会被 robots.txt 拒绝（PermissionError），
+    # 任何调用方（看板/脚本/curl）打这个接口都应该得到正确行为。
+    if source_id == "boss":
+        if not _trigger_collect("manual"):
+            with _COLLECT_LOCK:
+                running = _COLLECT["running"]
+            raise HTTPException(409, "采集进行中" if running else "无采集计划")
+        return {"accepted": True, "via": "collect"}
     with _RUNNING_LOCK:
         now = time.time()
         stale = [k for k, ts in _RUNNING.items() if now - ts > _RUNNING_TTL]
