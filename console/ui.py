@@ -226,7 +226,7 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
     <div class="grid g2">
       <div class="card">
         <h2>岗类分布（在招）</h2>
-        <p class="hint">未映射岗位显示为「未映射」，进 unmapped_term 队列<span class="asof"></span></p>
+        <p class="hint">词典匹配不到时归「未归类」，进 unmapped_term 队列待补词典<span class="asof"></span></p>
         <div id="families"></div>
       </div>
       <div class="card">
@@ -237,7 +237,7 @@ footer{margin-top:22px;text-align:center;color:#9aa1ab;font-size:11.5px}
     </div>
     <div class="card">
       <h2>业务领域分布</h2>
-      <p class="hint">按公司名关键词粗分类（信息技术 / 财务金融 / 交通物流 / 电子芯片 等）<span class="asof"></span></p>
+      <p class="hint">公司名识别行业，识别不出的按<b>岗类反推</b>（带 * 号）<span class="asof"></span></p>
       <div id="domains" style="display:flex;justify-content:center"></div>
     </div>
   </section>
@@ -1101,9 +1101,9 @@ async function main(){
 
     const fam = {}, city = {};
     active.forEach(r => {
-      const k = r.category || '未映射';
+      const k = r.category || '未归类';
       fam[k] = (fam[k] || 0) + r.active_jobs;
-      const c = r.city || '未知';
+      const c = r.city || '仅省级';
       city[c] = (city[c] || 0) + r.active_jobs;
     });
     const sortDesc = o => Object.entries(o).sort((a, b) => b[1] - a[1]);
@@ -1111,8 +1111,8 @@ async function main(){
 
     const skills = (skillsR.rows || []).map(r => [r.skill, r.n]);
     $('skills').innerHTML = hbar(skills, '#7c3aed');
-    const domains = (domainsR.rows || []).map(r => [r.domain, r.n]);
-    $('domains').innerHTML = hbar(domains, '#0891b2');
+    const domains = (domainsR.rows || []).map(r => [r.inferred_n > 0 ? r.domain + '*' : r.domain, r.n]);
+    $('domains').innerHTML = hbar(domains.slice(0, 12), '#0891b2');
 
     // 薪资分布直方图（月薪区间）
     const hist = (salaryHistR.rows || []).map(r => [`${r.lo}-${r.lo + 5}`, r.n]);
@@ -1148,10 +1148,10 @@ async function main(){
       unmapped.map(r => [esc(r.term), r.cnt]), '没有未映射项');
 
     $('fCat').innerHTML = '<option value="">全部岗类</option>' +
-      sortDesc(fam).map(([k]) => k).filter(k => k !== '未映射')
+      sortDesc(fam).map(([k]) => k).filter(k => k !== '未归类')
         .map(k => `<option>${esc(k)}</option>`).join('');
     $('fCity').innerHTML = '<option value="">全部城市</option>' +
-      sortDesc(city).map(([k]) => k).filter(k => k !== '未知')
+      sortDesc(city).map(([k]) => k).filter(k => k !== '仅省级')
         .map(k => `<option>${esc(k)}</option>`).join('');
     loadJobs(0);
     loadPlan();

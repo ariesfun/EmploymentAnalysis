@@ -370,21 +370,53 @@ def analytics_skills(limit: int = 15, _=Depends(auth), conn=Depends(db)):
 
 @app.get("/api/analytics/domains")
 def analytics_domains(_=Depends(auth), conn=Depends(db)):
-    """业务领域分布（从公司名关键词粗分类，去重后活跃岗位）。"""
+    """业务领域分布。
+
+    两段式判定，避免一大坨「其他」：
+    1. **公司名行业词**（IT服务/互联网/电子芯片/制造/医疗…）——最准；
+    2. 公司名认不出时，**按岗类反推**（技术岗→信息技术、普工→制造、销售→企业服务），
+       这类结果单独计入 inferred_n，前端注明"按岗位推断"，不假装是公司行业。
+    """
     rows = conn.execute(
-        """SELECT CASE
-                 WHEN company_name ~ '科技|信息|软件|网络|智能|数据' THEN '信息技术'
-                 WHEN company_name ~ '财务|会计|税务|金融' THEN '财务金融'
-                 WHEN company_name ~ '轨道|交通|运输|物流|供应链' THEN '交通物流'
-                 WHEN company_name ~ '安全' THEN '安全'
-                 WHEN company_name ~ '芯|半导体|电子' THEN '电子芯片'
-                 WHEN company_name ~ '医疗|医药|生物' THEN '医疗健康'
-                 WHEN company_name ~ '教育|培训|学校' THEN '教育培训'
-                 WHEN company_name ~ '制造|机械|设备|工业' THEN '制造工业'
-                 WHEN company_name ~ '贸易|商贸' THEN '商贸'
-                 ELSE '其他' END AS domain,
-               count(*) AS n
-           FROM m_job_dedup GROUP BY 1 ORDER BY 2 DESC"""
+        """WITH d AS (
+             SELECT category, company_name,
+               CASE
+                 WHEN company_name ~ '人力资源|劳务' THEN '人力资源服务'
+                 WHEN company_name ~ '中软|软通|法本|德科|慧博云通|中电金信|柯莱特|佰钧成|中科创达|京北方|文思|博彦|东软|太极|神州数码' THEN 'IT服务/外包'
+                 WHEN company_name ~ '腾讯|阿里|百度|字节|美团|京东|网易|小米|华为|中兴|快手|滴滴|拼多多|携程' THEN '互联网'
+                 WHEN company_name ~ '芯|半导体|集成电路|微电子|晶圆|光电' THEN '电子芯片'
+                 WHEN company_name ~ '医疗|医药|生物|制药|医院|基因' THEN '医疗健康'
+                 WHEN company_name ~ '教育|培训|学校|学院|职教' THEN '教育培训'
+                 WHEN company_name ~ '银行|保险|证券|基金|财务|会计|金融|支付' THEN '金融'
+                 WHEN company_name ~ '轨道|交通|运输|物流|供应链|快递|航空|航运' THEN '交通物流'
+                 WHEN company_name ~ '汽车|零部件|新能源|锂电' THEN '汽车/新能源'
+                 WHEN company_name ~ '建筑|建设|工程|地产|置业|装饰' THEN '建筑地产'
+                 WHEN company_name ~ '制造|机械|设备|工业|材料|化工|钢铁' THEN '制造工业'
+                 WHEN company_name ~ '传媒|文化|影业|广告|影视' THEN '传媒文化'
+                 WHEN company_name ~ '贸易|商贸|零售|超市|电商|百货' THEN '商贸零售'
+                 WHEN company_name ~ '科技|信息|软件|网络|智能|数据|云|技术|通信' THEN '信息技术'
+                 ELSE NULL END AS dom
+             FROM m_job_dedup
+           ), b AS (
+             SELECT COALESCE(dom,
+               CASE
+                 WHEN category IN ('后端开发','前端开发','算法/AI','数据','测试','运维/SRE',
+                                   '嵌入式/硬件','移动开发','网络安全') THEN '信息技术'
+                 WHEN category IN ('销售/市场','职能','产品/项目','设计') THEN '企业服务'
+                 WHEN category IN ('普工/操作','机械/制造') THEN '制造工业'
+                 WHEN category = '物流/仓储' THEN '交通物流'
+                 WHEN category = '建筑/工程' THEN '建筑地产'
+                 WHEN category = '教育/培训' THEN '教育培训'
+                 WHEN category = '传媒/内容' THEN '传媒文化'
+                 WHEN category = '安全/消防' THEN '企业服务'
+                 WHEN category = '产品研发(非软件)' THEN '制造工业'
+                 ELSE '其他行业' END) AS domain,
+               (dom IS NULL) AS inferred
+             FROM d
+           )
+           SELECT domain, count(*) AS n,
+                  count(*) FILTER (WHERE inferred) AS inferred_n
+           FROM b GROUP BY 1 ORDER BY 2 DESC"""
     ).fetchall()
     return {"rows": rows}
 
@@ -685,7 +717,7 @@ def analytics_experience(_=Depends(auth), conn=Depends(db)):
     """经验要求分布。"""
     rows = conn.execute(
         """SELECT CASE
-                 WHEN exp_min_years IS NULL THEN '未标注'
+                 WHEN exp_min_years IS NULL THEN '源未提供'
                  WHEN exp_min_years = 0 AND coalesce(exp_max_years, 0) = 0 THEN '应届/不限'
                  WHEN exp_min_years <= 1 THEN '1年以内'
                  WHEN exp_min_years <= 3 THEN '1-3年'
