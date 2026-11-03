@@ -57,11 +57,17 @@ def main() -> int:
 
     if args.plan:
         conn = store.connect(boss_collect.DSN)
-        plan = boss_collect.load_plan(conn)
-        conn.close()
-        if not plan or not plan.get("enabled"):
-            logger.warning("采集计划未启用或无配置，退出")
-            return 1
+        try:
+            plan = boss_collect.load_plan(conn)
+            if not plan or not plan.get("enabled"):
+                logger.warning("采集计划未启用或无配置，退出")
+                return 1
+            # 与看板共用同一份回写逻辑：调度器按 last_run_at 判到期，
+            # 不写会让它以为从未跑过，启动看板时立刻重复采集
+            boss_collect.mark_plan_started(conn)
+            conn.commit()
+        finally:
+            conn.close()
     else:
         plan = {
             "keywords": [args.keyword],
@@ -78,6 +84,19 @@ def main() -> int:
         plan, progress=on_progress, no_ingest=args.no_ingest,
         min_delay=args.min_delay, max_delay=args.max_delay,
     )
+
+    # 只有按库里的计划跑（--plan）才回写状态：临时组合的采集不代表计划执行结果，
+    # 写进去会让看板把一次随手测试当成「计划上次运行」。
+    if args.plan:
+        try:
+            conn = store.connect(boss_collect.DSN)
+            try:
+                boss_collect.record_plan_result(conn, result)
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001  回写失败不该吞掉采集结果
+            logger.warning("回写采集结果失败", exc_info=True)
 
     logger.info("采集结果：抓取 %d 条 / 入库 %d / %d 页%s",
                 result["total"], result["upserted"], result["pages_done"],

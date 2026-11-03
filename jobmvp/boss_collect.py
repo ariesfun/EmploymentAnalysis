@@ -188,6 +188,66 @@ def build_combos(plan: dict) -> tuple[list[tuple[str, str, str]], int]:
     return combos, pages
 
 
+# ---------------------------------------------------------------- 计划状态回写
+#
+# 看板「采集控制」卡片和内置调度器都只认 scrape_plan 的这三列：
+#   last_run_at    调度器据此判「是否到期」，NULL 视为到期
+#   last_status    success / risk / error；risk 会触发 180 分钟冷却
+#   last_message   给看板展示的一句话
+# 写入逻辑必须只有一份：以前只写在 console/app.py，CLI 路径不回写，
+# 导致 CLI 跑成功看板仍显示旧错误、调度器还会立刻重复采集。
+
+
+def mark_plan_started(conn, source_id: str = "boss") -> None:
+    """采集开始时写 `last_run_at`（调用方负责 commit）。
+
+    为什么在「开始」而不是「结束」写：采集一轮要几分钟，
+    期间调度器若按旧的 last_run_at 判断，会认为早已到期而重复触发。
+
+    参数:
+        conn: 已打开的 psycopg 连接。
+        source_id: 计划所属数据源，目前只有 'boss'。
+    """
+    conn.execute("UPDATE scrape_plan SET last_run_at=now() WHERE source_id=%s",
+                 (source_id,))
+
+
+def plan_status(result: dict) -> str:
+    """把 `collect()` 的结果映射成 `scrape_plan.last_status` 的三态值。
+
+    单点定义，避免调用方各写一份判定后跑偏（本缺陷的成因）。
+    """
+    return ("success" if result.get("ok") else
+            "risk" if result.get("risk_code") else "error")
+
+
+def record_plan_result(conn, result: dict, source_id: str = "boss") -> str:
+    """采集结束后把结果写回 `last_status` / `last_message`（调用方负责 commit）。
+
+    状态三态:
+        success  正常跑完（result["ok"] 为真）
+        risk     触发风控（result["risk_code"] 非空），调度器据此冷却
+        error    其他失败（Chrome 未启动、请求异常、计划为空等）
+
+    参数:
+        conn: 已打开的 psycopg 连接。
+        result: `collect()` 的返回字典，需含 ok / total / message，
+                触发风控时还要有 risk_code。
+        source_id: 计划所属数据源，目前只有 'boss'。
+
+    返回:
+        实际写入的 status，便于调用方复用同一判定打日志。
+    """
+    status = plan_status(result)
+    # 没给 message 时兜底成条数，看板不至于显示空白
+    message = (result.get("message") or f"抓取 {result.get('total', 0)} 条")[:300]
+    conn.execute(
+        "UPDATE scrape_plan SET last_status=%s, last_message=%s WHERE source_id=%s",
+        (status, message, source_id),
+    )
+    return status
+
+
 # ---------------------------------------------------------------- 主流程
 
 

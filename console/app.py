@@ -120,8 +120,7 @@ def _run_collect(plan: dict, trigger: str) -> None:
                   "pages_total": 0, "aborted": True, "risk_code": None,
                   "error_kind": "exception", "message": f"{type(e).__name__}: {str(e)[:160]}"}
 
-    status = ("success" if result["ok"] else
-              "risk" if result.get("risk_code") else "error")
+    status = boss_collect.plan_status(result)
     with _COLLECT_LOCK:
         _COLLECT.update(
             running=False, phase=("done" if result["ok"] else "aborted"),
@@ -134,10 +133,7 @@ def _run_collect(plan: dict, trigger: str) -> None:
         )
     try:
         conn = store.connect(DSN)
-        conn.execute(
-            """UPDATE scrape_plan SET last_status=%s, last_message=%s WHERE source_id='boss'""",
-            (status, (result.get("message") or f"抓取 {result['total']} 条")[:300]),
-        )
+        boss_collect.record_plan_result(conn, result)
         conn.commit()
         conn.close()
     except Exception:  # noqa: BLE001
@@ -168,7 +164,7 @@ def _trigger_collect(trigger: str = "manual") -> bool:
     # 先写 last_run_at，避免调度器在采集期间重复判到期
     try:
         conn = store.connect(DSN)
-        conn.execute("UPDATE scrape_plan SET last_run_at=now() WHERE source_id='boss'")
+        boss_collect.mark_plan_started(conn)
         conn.commit()
         conn.close()
     except Exception:  # noqa: BLE001
