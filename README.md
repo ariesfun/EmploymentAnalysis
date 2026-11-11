@@ -165,6 +165,18 @@ JOBMVP_DSN=postgresql://mvp:mvp@127.0.0.1:5432/jobmvp JOBMVP_API_KEY=devkey \
 岗类与城市分布 / 薪资分位 / 运行历史 / 未映射队列 / 审计日志，右上角可一键触发采集）。
 页面本身不含数据，所有数据都通过带 `X-API-Key` 的接口取。
 
+> **配置外置（推荐）**：上面那些 `JOBMVP_DSN` 不必每次手打。把连接串写进仓库根目录的
+> `.env`（已被 `.gitignore` 忽略，不会入库），`jobmvp` CLI、`console`、
+> `scripts/dashboard_manager.py` 和 pytest 启动时都会自动读取（见 `jobmvp/env.py`）：
+>
+> ```ini
+> JOBMVP_DSN=postgresql://mvp:<口令>@127.0.0.1:5432/jobmvp
+> TEST_DSN=postgresql://mvp:<口令>@127.0.0.1:5432/jobmvp_test
+> ```
+>
+> **已存在的环境变量优先**，`.env` 只填补空缺，方便临时覆盖。注意 pytest 会把
+> `JOBMVP_DSN` 强制改指测试库（`tests/conftest.py`），防止跑测试把业务数据清空。
+
 控制台接口（均需 `X-API-Key`，未配置 `JOBMVP_API_KEY` 时一律 401）：
 
 | 接口 | 用途 |

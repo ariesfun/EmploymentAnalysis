@@ -3,7 +3,13 @@ from pathlib import Path
 
 import pytest
 from jobmvp import store
+from jobmvp.env import load_env
+
+load_env()                                                   # 允许用 .env 里的测试库连接串
 DSN = os.environ.get("TEST_DSN", "postgresql://mvp:mvp@localhost/jobmvp")
+# 安全阀：.env 里的 JOBMVP_DSN 指向**业务库**，而测试 fixture 会 TRUNCATE 业务表。
+# 这里强制把 JOBMVP_DSN 也指向测试库，避免开发机上跑一次 pytest 就把真实数据清空。
+os.environ["JOBMVP_DSN"] = DSN
 
 @pytest.fixture()
 def conn():

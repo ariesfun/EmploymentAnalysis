@@ -7,10 +7,13 @@ import sys
 from contextlib import asynccontextmanager
 
 from jobmvp import boss_collect, store
+from jobmvp.env import load_env                          # 读完 .env 再取 DSN，否则改动不生效
 from jobmvp.scheduler import CollectScheduler
 from jobmvp.registry import REGISTRY                     # 与 CLI 共用同一份适配器注册表
 from jobmvp.runner import SourceDisabled, run_source
 from .ui import router as ui_router
+
+load_env()
 
 # ---------------------------------------------------------------- 运行日志
 import logging

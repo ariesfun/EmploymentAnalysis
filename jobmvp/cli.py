@@ -2,10 +2,12 @@
 from __future__ import annotations
 import argparse, os, sys
 from . import store
+from .env import load_env
 from .registry import REGISTRY
 from .runner import SourceDisabled, run_source
 
 def main(argv=None) -> int:
+    load_env()                                   # 先用 .env 补齐 JOBMVP_DSN 等环境变量
     ap = argparse.ArgumentParser(prog="jobmvp")
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run"); r.add_argument("source_id"); r.add_argument("--trigger", default="schedule")

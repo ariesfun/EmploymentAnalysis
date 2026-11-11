@@ -28,6 +28,12 @@ import subprocess
 import sys
 import time
 
+# 读 .env（仓库根目录）再取连接串；README 第 9 节要求口令走环境变量，不入库
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from jobmvp.env import load_env  # noqa: E402  （必须在 sys.path 调整之后导入）
+
+load_env()
+
 DEFAULT_DSN = "postgresql://mvp:mvp@127.0.0.1:5432/jobmvp"
 DEFAULT_KEY = "devkey"
 HOST = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
