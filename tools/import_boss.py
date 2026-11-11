@@ -6,8 +6,9 @@ normalize（薪资/地区/岗类/技能）→ upsert（source_job_id 去重）�
 
 为什么这么拆
 ------------
-取数（登录态、CDP 旁听、风控）交给成熟的第三方工具（boss-zhipin-scraper /
-boss-agent-cli / boss-cli），本项目只负责它最擅长的「标准化 + 去重 + 指标 + 看板」。
+取数（登录态、CDP 旁听、风控）交给成熟的第三方工具（boss-zhipin-scraper
+https://github.com/eatmoreduck/boss-zhipin-scraper / boss-agent-cli / boss-cli），
+本项目只负责它最擅长的「标准化 + 去重 + 指标 + 看板」。
 两者松耦合：第三方升级不影响本项目，本项目也不需要碰 Chrome。
 
 支持格式

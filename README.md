@@ -153,4 +153,13 @@ Apache License 2.0，见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。允许商用�
 分发修改版需保留原许可声明并标注改动。含专利授权（第 3 条）与免责条款（第 7、8 条），
 不授予商标使用权（第 6 条）。
 
+### 第三方与参考
+
+BOSS 直聘采集**只参考了思路与公开接口路径**（Chrome DevTools Protocol 复用登录态、
+`wapi/zpgeek/search/joblist.json` 明文薪资接口），来源是
+[eatmoreduck/boss-zhipin-scraper](https://github.com/eatmoreduck/boss-zhipin-scraper)（MIT License）。
+
+**本项目未复制其代码**，`jobmvp/boss_collect.py` 等实现为本仓库独立编写；该项目版权归其作者，
+其 MIT 条款不适用于本项目源码。完整归属说明见 [NOTICE](NOTICE) 第 4 条。
+
 提交前自检凭据：`.venv/Scripts/python.exe tools/scan_secrets.py`（工作区 + 全历史，命中退出码 1）。
