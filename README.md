@@ -9,6 +9,14 @@
 **已具备**：多源采集（含 BOSS CDP 旁听 / 主动调 API）、业务去重、薪资分位、技能热度、业务领域、
 经验分布、岗位匹配度（求职意向）、采集配置、实时状态监控、**内置采集调度器**（点按钮采集 / 按间隔自动采集）。
 
+> ### ⚠️ 合规声明（请先读这一段）
+>
+> - 本仓库**只公开代码**，不包含任何采集到的数据、原始页、日志或截图；`data/`、`logs/`、`reference/` 均被 `.gitignore` 排除。
+> - 采集代码仅用于**学习与技术演示**。使用者须自行确保遵守目标站点的 `robots.txt`、服务条款，
+>   以及《数据安全法》《个人信息保护法》《反不正当竞争法》等法律法规；**作者不提供、不托管、不分发任何数据**。
+> - 代码按设计**不接收、不存储**招聘方个人联系方式（HR 姓名 / 电话 / 邮箱 / 微信），原始层落盘前即脱敏（见 `jobmvp/pii.py`）。
+> - 任何因使用本代码产生的数据合法性、账号风控、法律责任由使用者自行承担。详见 [`SECURITY.md`](SECURITY.md)。
+
 ---
 
 ## 0. 项目简介
@@ -538,17 +546,35 @@ JOBMVP_API_KEY=k \
 
 ## 9. 重置数据库
 
+口令**不要写进命令历史和仓库**，用环境变量传：
+
 ```bash
+export PGPASSWORD="<你的 postgres 口令>"      # Windows: $env:PGPASSWORD = "..."
 .venv/Scripts/python.exe - <<'PY'
-import psycopg
-with psycopg.connect("postgresql://postgres:<REDACTED>@127.0.0.1:5432/postgres", autocommit=True) as c:
+import os, psycopg
+dsn = "postgresql://postgres:{pw}@127.0.0.1:5432/postgres".format(pw=os.environ["PGPASSWORD"])
+with psycopg.connect(dsn, autocommit=True) as c:
     for db in ("jobmvp", "jobmvp_test"):
-        c.execute(f"DROP DATABASE IF EXISTS {db} WITH (FORCE)")
-        c.execute(f"CREATE DATABASE {db} TEMPLATE postgres OWNER mvp")
+        c.execute("DROP DATABASE IF EXISTS {db} WITH (FORCE)".format(db=db))
+        c.execute("CREATE DATABASE {db} TEMPLATE postgres OWNER mvp".format(db=db))
 PY
 ```
+
+> 早期版本这里写死过本机超级用户口令，已在全部 git 历史中清除；克隆历史副本仍可能看到，请视情况轮换。
 
 > **本机坑**：这个 PostgreSQL 实例的 `template0` 数据目录缺失（`base/4` 不存在），
 > `CREATE DATABASE ... TEMPLATE template0` 会报
 > `无法打开文件 "base/4/pg_filenode.map"`。改用 `TEMPLATE postgres` 即可。
 > 如需修好 template0，需以单用户模式重建该库，属运维操作，暂不处理。
+
+---
+
+## 10. 许可
+
+本项目采用 **Apache License 2.0**（见 [`LICENSE`](LICENSE) 与 [`NOTICE`](NOTICE)）。
+
+- 允许商用、修改、再分发；分发修改版需保留原许可声明并标注改动。
+- 含**专利授权**（第 3 条）与**免责条款**（第 7、8 条）；**不授予商标使用权**（第 6 条）。
+- 换许可只需替换 `LICENSE` 文件与本节：想要「修改必须开源」→ AGPL-3.0；想要最短文本 → MIT。
+
+提交前自检凭据：`.venv/Scripts/python.exe tools/scan_secrets.py`（工作区 + 全历史，命中退出码 1）。

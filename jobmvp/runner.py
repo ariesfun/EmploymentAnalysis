@@ -7,6 +7,7 @@ from typing import Callable
 from . import store
 from .adapter import CaptchaDetected, SourceAdapter, Throttle, sanitize
 from .normalize import SkillMatcher, map_category, parse_experience, parse_salary, split_location
+from .pii import redact
 
 class SourceDisabled(Exception): pass
 
@@ -39,11 +40,19 @@ def normalize_item(conn, item: dict, matcher, rules, regions, raw_path: str) -> 
     return rec
 
 def save_raw(root: Path, source_id: str, url: str, body: str) -> str:
+    """落盘一页原文到原始层，返回文件路径。
+
+    落盘前做 PII 脱敏：整页 HTML 里带招聘方联系人与电话（mohrss 的
+    aae004/aae005、BOSS 的 bossName），解析层白名单管不到落盘副本，
+    必须在这里拦一次，否则「PII 不落原始层」只是文档承诺。
+    注意脱敏只作用于写盘的那份副本：`adapter.parse(page)` 读的是内存里的
+    `page.body`，解析结果与脱敏前一致，可重放性不受影响（岗位字段一个不动）。
+    """
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     d = root / source_id / day
     d.mkdir(parents=True, exist_ok=True)
     p = d / (hashlib.sha1(url.encode()).hexdigest() + ".json")
-    p.write_text(json.dumps({"url": url, "body": body}, ensure_ascii=False))
+    p.write_text(json.dumps({"url": url, "body": redact(body)}, ensure_ascii=False))
     return str(p)
 
 def run_source(conn, adapter: SourceAdapter, source_id: str, *, trigger: str = "schedule", actor: str = "scheduler",
