@@ -37,3 +37,9 @@ logs/
 # 临时目录（Playwright artifacts / pytest tmp_path）
 .tmp/
 pytest-of-*/
+
+# 开发过程文档（产品方案 / 调研 / 踩坑 / 变更日志 / 界面设计稿，仅本地保留）
+docs/dev/
+
+# 本地 AI 协作说明（写满本机路径与个人习惯，不对外展示）
+CLAUDE.md
